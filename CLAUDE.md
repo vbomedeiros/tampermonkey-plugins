@@ -35,6 +35,26 @@ Every `.user.js` must begin with this block (filled in per plugin):
 - `@updateURL` / `@downloadURL` — both point to the plugin's raw GitHub URL; replace `PLUGIN-FOLDER` with the actual folder name
 - `@version` — bump on every push to trigger auto-update in Tampermonkey (use semver)
 
+## WaniKani plugins — Turbo navigation
+
+WaniKani uses Turbo/Hotwire for client-side navigation. Any WaniKani plugin that calls
+its setup function directly at startup will break after Turbo navigation (user must
+hard-refresh). Full details and a migration template are in
+[WANIKANI-TURBO-NAVIGATION.md](WANIKANI-TURBO-NAVIGATION.md).
+
+**Quick checklist when working on a WaniKani plugin:**
+
+1. `@match` must be `https://www.wanikani.com/*` (not narrowed to a sub-path) so the
+   script is present when Turbo navigation starts from the dashboard
+2. Add `@require` for wk-item-info-injector pinned to **version=1326536** (v3.8) —
+   do not bump to v3.13, it crashes on the current WaniKani DOM
+3. Replace any direct setup call with a `wkItemInfo` registration that **returns** a
+   DOM element from the callback (do not insert into the page manually)
+
+Exception: plugins that only run on item pages (`/vocabulary/*`, `/kanji/*`, etc.) and
+are never navigated to via Turbo from a non-matching page can keep a narrower `@match`.
+See `wanikani-to-anki` for that pattern.
+
 ## Creating a new plugin
 
 ```bash
