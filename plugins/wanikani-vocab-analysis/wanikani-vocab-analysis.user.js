@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Vocabulary Analysis
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.5.0
+// @version      1.5.2
 // @description  Adds a ChatGPT-powered etymology and analysis section to WaniKani vocabulary lessons
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/subject-lessons/*
@@ -141,9 +141,15 @@ Additional rules:
             try {
                 const key = getApiKey();
                 if (!key) { status.textContent = 'No API key provided.'; return; }
+                if (!vocab) { status.textContent = 'No vocabulary characters available.'; return; }
                 const text = await callChatGPT(vocab, key);
+                if (!text.trimStart().startsWith('<')) {
+                    status.textContent = 'Unexpected response format — not cached.';
+                    content.textContent = text;
+                    return;
+                }
                 GM_setValue(CACHE_PREFIX + id, text);
-                content.innerHTML = renderMarkdown(text);
+                content.innerHTML = text;
                 analyzeBtn.textContent = 'Refresh';
                 status.textContent = '';
             } catch (e) {
