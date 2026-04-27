@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Vocabulary Analysis
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.4.0
+// @version      1.5.0
 // @description  Adds a ChatGPT-powered etymology and analysis section to WaniKani vocabulary lessons
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/subject-lessons/*
@@ -18,7 +18,7 @@
 (function () {
     'use strict';
 
-    const CACHE_PREFIX = 'wk_analysis_';
+    const CACHE_PREFIX = 'wk_analysis_v2_';
     const API_KEY_STORAGE = 'wk_analysis_api_key';
 
     const SYSTEM_PROMPT = `This GPT specializes in explaining the meaning and etymology of Japanese words, with a focus on kanji composition. When given a Japanese word, it provides a structured explanation in fluent English, following a consistent six-part layout:
@@ -37,7 +37,20 @@ short definition sentence.
 
 6. **In Summary** – Produces a concise wrap-up (under 500 characters) of the word's meaning and how the kanji contribute to it. The model first generates a draft summary, counts its characters, and silently iterates at least once to expand and enrich the summary if it is too short or lacking context. The goal is to make full use of the 500-character limit while maintaining clarity and accuracy. This summary includes both the English meaning and each kanji's role or meaning, written in a style suitable for direct copy-paste into WaniKani notes for quick reference.
 
-The GPT always answers in English except for the dictionary definition in section 5, which is written in Japanese. It uses kanji or hiragana when referencing Japanese terms but never uses romaji. Explanations should remain clear, structured, and engaging for learners and curious readers.`;
+The GPT always answers in English except for the dictionary definition in section 5, which is written in Japanese. It uses kanji or hiragana when referencing Japanese terms but never uses romaji. Explanations should remain clear, structured, and engaging for learners and curious readers.
+
+Format your response as HTML with inline styles only — no <style> blocks, no classes, no markdown, no preamble, no wrapper element around the whole response. Use this structure for each section:
+
+<div style="border-top:1px solid #e0e0e0;margin-top:20px;padding-top:16px;">
+<h4 style="font-size:1.05em;font-weight:bold;margin:0 0 10px 0;">1. Section Name</h4>
+<p style="margin:0 0 8px 0;line-height:1.65;">Paragraph text. Use <strong> for bold key terms.</strong></p>
+</div>
+
+Additional rules:
+- Wrap every section in the <div> above (with border-top), including section 1
+- In section 4 (Example Phrases), format each example as: <p style="margin:0 0 2px 0;"><strong>Japanese sentence</strong></p><p style="margin:0 0 10px 0;color:#666;font-size:.9em;">English translation</p>
+- In section 5 (Dictionary Definition), put the entry inside: <div style="background:#f5f5f5;padding:10px 14px;border-radius:4px;font-family:monospace;line-height:1.8;margin:4px 0;">
+- Output ONLY the HTML — nothing else.`;
 
     // ── API key ──────────────────────────────────────────────────────────────
 
@@ -90,40 +103,6 @@ The GPT always answers in English except for the dictionary definition in sectio
         });
     }
 
-    // ── Markdown renderer ────────────────────────────────────────────────────
-
-    function renderMarkdown(md) {
-        const esc = md
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
-
-        const bold = s => s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-        const lines = esc.split('\n');
-        const out = [];
-        let inList = false;
-
-        for (const raw of lines) {
-            const heading = raw.match(/^#{1,4} (.+)/);
-            const listItem = raw.match(/^(?:[-*]|\d+\.) (.+)/);
-
-            if (heading) {
-                if (inList) { out.push('</ul>'); inList = false; }
-                out.push(`<h4 style="margin:16px 0 4px;font-size:1em;">${bold(heading[1])}</h4>`);
-            } else if (listItem) {
-                if (!inList) { out.push('<ul style="margin:4px 0 4px 20px;padding:0;">'); inList = true; }
-                out.push(`<li>${bold(listItem[1])}</li>`);
-            } else if (!raw.trim()) {
-                if (inList) { out.push('</ul>'); inList = false; }
-            } else {
-                if (inList) { out.push('</ul>'); inList = false; }
-                out.push(`<p style="margin:4px 0;">${bold(raw)}</p>`);
-            }
-        }
-        if (inList) out.push('</ul>');
-        return out.join('');
-    }
-
     // ── Section UI ───────────────────────────────────────────────────────────
 
     function buildSection(itemObject) {
@@ -151,7 +130,7 @@ The GPT always answers in English except for the dictionary definition in sectio
 
         const content = document.createElement('div');
         content.style.cssText = 'font-size:.95em;line-height:1.65;';
-        if (cached) content.innerHTML = renderMarkdown(cached);
+        if (cached) content.innerHTML = cached;
 
         wrapper.append(header, status, content);
 
