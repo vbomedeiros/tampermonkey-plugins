@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Vocabulary Analysis
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.6.0
+// @version      1.7.0
 // @description  Adds a ChatGPT-powered etymology and analysis section to WaniKani vocabulary lessons
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/subject-lessons/*
@@ -65,8 +65,19 @@ Additional rules:
 
     // ── ChatGPT call ─────────────────────────────────────────────────────────
 
-    function callChatGPT(vocab, apiKey) {
+    function callChatGPT(vocab, apiKey, onDelta) {
         return new Promise((resolve, reject) => {
+            let lastIndex = 0;
+            let buffer = '';
+            let accumulated = '';
+            let settled = false;
+
+            function settle(fn, val) {
+                if (settled) return;
+                settled = true;
+                fn(val);
+            }
+
             GM_xmlhttpRequest({
                 method: 'POST',
                 url: 'https://api.openai.com/v1/responses',
@@ -79,29 +90,44 @@ Additional rules:
                     instructions: SYSTEM_PROMPT,
                     input: vocab,
                     reasoning: { effort: 'high' },
+                    stream: true,
                 }),
-                onload(r) {
-                    if (r.status === 200) {
+                onprogress(r) {
+                    if (settled) return;
+                    const newData = r.responseText.slice(lastIndex);
+                    lastIndex = r.responseText.length;
+                    buffer += newData;
+
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // keep incomplete last line in buffer
+
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        const payload = line.slice(6).trim();
+                        if (payload === '[DONE]') { settle(resolve, accumulated); return; }
                         try {
-                            const data = JSON.parse(r.responseText);
-                            const message = data.output.find(o => o.type === 'message');
-                            if (!message) { reject(new Error('No message in API response')); return; }
-                            const item = message.content.find(c => c.type === 'output_text');
-                            if (!item || !item.text.trim()) { reject(new Error('Empty response from API')); return; }
-                            resolve(item.text.trim());
-                        } catch {
-                            reject(new Error('Failed to parse API response'));
-                        }
-                    } else if (r.status === 401) {
-                        GM_setValue(API_KEY_STORAGE, '');
-                        reject(new Error('Invalid API key — cleared. Click again to re-enter.'));
-                    } else {
-                        let msg = `API error ${r.status}`;
-                        try { msg += ': ' + JSON.parse(r.responseText).error?.message; } catch {}
-                        reject(new Error(msg));
+                            const event = JSON.parse(payload);
+                            if (event.type === 'response.output_text.delta' && event.delta) {
+                                accumulated += event.delta;
+                                onDelta?.(accumulated);
+                            }
+                        } catch {}
                     }
                 },
-                onerror() { reject(new Error('Network request failed')); },
+                onload(r) {
+                    if (settled) return;
+                    if (r.status === 401) {
+                        GM_setValue(API_KEY_STORAGE, '');
+                        settle(reject, new Error('Invalid API key — cleared. Click again to re-enter.'));
+                    } else if (r.status !== 200) {
+                        let msg = `API error ${r.status}`;
+                        try { msg += ': ' + JSON.parse(r.responseText).error?.message; } catch {}
+                        settle(reject, new Error(msg));
+                    } else {
+                        settle(resolve, accumulated);
+                    }
+                },
+                onerror() { settle(reject, new Error('Network request failed')); },
             });
         });
     }
@@ -145,7 +171,10 @@ Additional rules:
                 const key = getApiKey();
                 if (!key) { status.textContent = 'No API key provided.'; return; }
                 if (!vocab) { status.textContent = 'No vocabulary characters available.'; return; }
-                const text = await callChatGPT(vocab, key);
+                const text = await callChatGPT(vocab, key, (partial) => {
+                    if (status.textContent === 'Loading…') status.textContent = '';
+                    content.innerHTML = partial;
+                });
                 if (!text.trimStart().startsWith('<')) {
                     status.textContent = 'Unexpected response format — not cached.';
                     content.textContent = text;
