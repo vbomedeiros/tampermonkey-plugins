@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         WaniKani to Anki
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      4.9.0
+// @version      4.9.1
 // @description  Build easy-to-copy HTML source for Anki HTML editor
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/vocabulary/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=wanikani.com
-// @require      https://greasyfork.org/scripts/430565-wanikani-item-info-injector/code/WaniKani%20Item%20Info%20Injector.user.js?version=1673042
+// @require      https://greasyfork.org/scripts/430565-wanikani-item-info-injector/code/WaniKani%20Item%20Info%20Injector.user.js?version=1326536
 // @grant        none
 // @license      MIT
 // @updateURL    https://raw.githubusercontent.com/vbomedeiros/tampermonkey-plugins/main/plugins/wanikani-to-anki/wanikani-to-anki.user.js
