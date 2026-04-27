@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Vocabulary Analysis
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.7.1
+// @version      1.8.0
 // @description  Adds a ChatGPT-powered etymology and analysis section to WaniKani vocabulary lessons
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/subject-lessons/*
@@ -63,61 +63,107 @@ Additional rules:
         return key;
     }
 
-    // ── ChatGPT call ─────────────────────────────────────────────────────────
+    // ── API call ─────────────────────────────────────────────────────────────
     //
-    // GM_xmlhttpRequest does not deliver onprogress incrementally for cross-origin
-    // SSE/chunked responses in Tampermonkey's sandbox — it fires zero times or once
-    // at the very end. We keep stream:true as a server hint (reduces TTFB) but parse
-    // the complete SSE body in onload.
+    // True streaming requires ReadableStream, which GM_xmlhttpRequest cannot
+    // deliver (it buffers the full response). We try unsafeWindow.fetch first
+    // since it supports ReadableStream and OpenAI sets CORS headers. If the
+    // page's CSP blocks the connection (TypeError), we fall back to
+    // GM_xmlhttpRequest which bypasses CSP but can only parse the full body.
 
-    function parseSSE(text) {
-        let result = '';
-        for (const line of text.split('\n')) {
-            if (!line.startsWith('data: ')) continue;
-            const payload = line.slice(6).trim();
-            if (payload === '[DONE]') break;
-            try {
-                const event = JSON.parse(payload);
-                if (event.type === 'response.output_text.delta' && event.delta) {
-                    result += event.delta;
-                }
-            } catch {}
-        }
-        return result;
+    // Parse one SSE data line. Returns new accumulated text, or null on [DONE].
+    function parseLine(line, accumulated, onDelta) {
+        if (!line.startsWith('data: ')) return accumulated;
+        const payload = line.slice(6).trim();
+        if (payload === '[DONE]') return null;
+        try {
+            const event = JSON.parse(payload);
+            if (event.type === 'response.output_text.delta' && event.delta) {
+                accumulated += event.delta;
+                onDelta?.(accumulated);
+            }
+        } catch {}
+        return accumulated;
     }
 
-    function callChatGPT(vocab, apiKey, onDelta) {
+    async function streamViaFetch(apiKey, body, onDelta) {
+        const pageWindow = window.unsafeWindow || window;
+        const response = await pageWindow.fetch('https://api.openai.com/v1/responses', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+            body,
+        });
+        if (response.status === 401) {
+            GM_setValue(API_KEY_STORAGE, '');
+            throw new Error('Invalid API key — cleared. Click again to re-enter.');
+        }
+        if (!response.ok) {
+            let msg = `API error ${response.status}`;
+            try { const d = await response.json(); msg += ': ' + d.error?.message; } catch {}
+            throw new Error(msg);
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let accumulated = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            for (const line of lines) {
+                const next = parseLine(line, accumulated, onDelta);
+                if (next === null) return accumulated; // [DONE]
+                accumulated = next;
+            }
+        }
+        return accumulated;
+    }
+
+    function fallbackViaGM(apiKey, body, onDelta) {
         return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: 'POST',
                 url: 'https://api.openai.com/v1/responses',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`,
-                },
-                data: JSON.stringify({
-                    model: 'gpt-5.5',
-                    instructions: SYSTEM_PROMPT,
-                    input: vocab,
-                    reasoning: { effort: 'high' },
-                    stream: true,
-                }),
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                data: body,
                 onload(r) {
                     if (r.status === 401) {
                         GM_setValue(API_KEY_STORAGE, '');
                         reject(new Error('Invalid API key — cleared. Click again to re-enter.'));
-                    } else if (r.status !== 200) {
+                        return;
+                    }
+                    if (r.status !== 200) {
                         let msg = `API error ${r.status}`;
                         try { msg += ': ' + JSON.parse(r.responseText).error?.message; } catch {}
                         reject(new Error(msg));
-                    } else {
-                        const text = parseSSE(r.responseText);
-                        onDelta?.(text);
-                        resolve(text);
+                        return;
                     }
+                    let accumulated = '';
+                    for (const line of r.responseText.split('\n')) {
+                        const next = parseLine(line, accumulated, null);
+                        if (next !== null) accumulated = next;
+                    }
+                    onDelta?.(accumulated);
+                    resolve(accumulated);
                 },
                 onerror() { reject(new Error('Network request failed')); },
             });
+        });
+    }
+
+    function callChatGPT(vocab, apiKey, onDelta) {
+        const body = JSON.stringify({
+            model: 'gpt-5.5',
+            instructions: SYSTEM_PROMPT,
+            input: vocab,
+            reasoning: { effort: 'high' },
+            stream: true,
+        });
+        return streamViaFetch(apiKey, body, onDelta).catch(e => {
+            if (e instanceof TypeError) return fallbackViaGM(apiKey, body, onDelta);
+            throw e;
         });
     }
 
