@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Vocabulary Analysis
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.1.0
+// @version      1.2.0
 // @description  Adds a ChatGPT-powered etymology and analysis section to WaniKani vocabulary lessons
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/subject-lessons/*
@@ -183,13 +183,17 @@ The GPT always answers in English except for the dictionary definition in sectio
     }
 
     // ── Register with Item Info Injector ─────────────────────────────────────
+    // wkItemInfo initializes asynchronously via WKOF; wait for it before registering.
 
-    ['vocabulary', 'kanaVocabulary'].forEach(type => {
-        window.wkItemInfo
-            .on('lesson')
-            .forType(type)
-            .under('meaning')
-            .append('Vocabulary Analysis', buildSection);
+    window.wkof.include('wkItemInfo');
+    window.wkof.ready('wkItemInfo').then(() => {
+        ['vocabulary', 'kanaVocabulary'].forEach(type => {
+            window.wkItemInfo
+                .on('lesson')
+                .forType(type)
+                .under('meaning')
+                .append('Vocabulary Analysis', buildSection);
+        });
     });
 
 })();
