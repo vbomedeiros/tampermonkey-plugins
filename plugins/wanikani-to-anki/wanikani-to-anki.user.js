@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         WaniKani to Anki
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      4.8.0
+// @version      4.9.0
 // @description  Build easy-to-copy HTML source for Anki HTML editor
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/vocabulary/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=wanikani.com
-// @require      https://greasyfork.org/scripts/430565-wanikani-item-info-injector/code/WaniKani%20Item%20Info%20Injector.user.js?version=1326536
+// @require      https://greasyfork.org/scripts/430565-wanikani-item-info-injector/code/WaniKani%20Item%20Info%20Injector.user.js?version=1673042
 // @grant        none
 // @license      MIT
 // @updateURL    https://raw.githubusercontent.com/vbomedeiros/tampermonkey-plugins/main/plugins/wanikani-to-anki/wanikani-to-anki.user.js
@@ -14,20 +14,22 @@
 // ==/UserScript==
 
 ;(function () {
-    addWanikaniToAnkiSection();
+    // Register with the injector so the section is re-built on every Turbo
+    // navigation, not just on the initial hard load.
+    (function register() {
+        if (!window.wkItemInfo) { setTimeout(register, 50); return; }
+        ['vocabulary', 'kanaVocabulary'].forEach(type => {
+            window.wkItemInfo
+                .on('itemPage')
+                .forType(type)
+                .under('meaning')
+                .append('For Anki HTML import', buildSection);
+        });
+    })();
 
-    function addWanikaniToAnkiSection() {
+    function buildSection(_itemObject) {
         console.log("WaniKani to Anki: notified!");
-        const section = loadWanikaniToAnkiSection();
-        const pagenav = document.querySelector(".page-nav");
-
-        if (!pagenav) {
-            console.log("WaniKani to Anki: no page nav");
-            throw new Error("Could not find pagenav");
-        }
-
-        console.log("WaniKani to Anki: rendering");
-        pagenav.insertAdjacentElement("afterend", section);
+        return loadWanikaniToAnkiSection();
     }
 
     function inlineMarkStyles(root) {
@@ -182,17 +184,13 @@
     }
 
     function loadWanikaniToAnkiSection() {
-        const section = document.createElement("section");
-        section.classList.add("subject-section");
-
-        const ankiTitle = document.createElement("h2");
-        ankiTitle.classList.add("subject-section__title");
-        ankiTitle.textContent = "For Anki HTML import:";
-        section.appendChild(ankiTitle);
+        // The injector wraps the returned element in a titled <section>.
+        // Return a plain container with just the controls and content.
+        const container = document.createElement("div");
 
         const copyControls = document.createElement("section");
         copyControls.classList.add("subject-section__subsection");
-        section.appendChild(copyControls);
+        container.appendChild(copyControls);
 
         const copyButton = document.createElement("button");
         copyButton.textContent = "Copy HTML source";
@@ -205,11 +203,11 @@
         const ankiContent = document.createElement("section");
         ankiContent.classList.add("subject-section__subsection");
         ankiContent.id = "ankiImportSection";
-        section.appendChild(ankiContent);
+        container.appendChild(ankiContent);
 
         const htmlPreviewTitle = document.createElement("h3");
         htmlPreviewTitle.textContent = "HTML source to paste into Anki HTML editor:";
-        section.appendChild(htmlPreviewTitle);
+        container.appendChild(htmlPreviewTitle);
 
         const htmlSourceBox = document.createElement("textarea");
         htmlSourceBox.id = "ankiHtmlSource";
@@ -219,7 +217,7 @@
         htmlSourceBox.style.fontFamily = "monospace";
         htmlSourceBox.style.whiteSpace = "pre";
         htmlSourceBox.style.boxSizing = "border-box";
-        section.appendChild(htmlSourceBox);
+        container.appendChild(htmlSourceBox);
 
         function refreshHtmlSource() {
             const html = getAnkiHtml(ankiContent);
@@ -379,6 +377,6 @@
         }
 
         setTimeout(refreshHtmlSource, 300);
-        return section;
+        return container;
     }
 })();
