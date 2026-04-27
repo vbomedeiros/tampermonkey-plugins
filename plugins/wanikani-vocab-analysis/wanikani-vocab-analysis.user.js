@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Vocabulary Analysis
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.2.0
+// @version      1.4.0
 // @description  Adds a ChatGPT-powered etymology and analysis section to WaniKani vocabulary lessons
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/subject-lessons/*
@@ -183,17 +183,22 @@ The GPT always answers in English except for the dictionary definition in sectio
     }
 
     // ── Register with Item Info Injector ─────────────────────────────────────
-    // wkItemInfo initializes asynchronously via WKOF; wait for it before registering.
+    // wkItemInfo is a standalone library that sets window.wkItemInfo at
+    // document.readyState === 'interactive'. Poll until it's available.
 
-    window.wkof.include('wkItemInfo');
-    window.wkof.ready('wkItemInfo').then(() => {
+    // Scripts with GM_* grants run in a Tampermonkey sandbox where window is a
+    // proxy. The injector sets wkItemInfo on unsafeWindow (the real page window),
+    // not the sandbox window, so we must look there first.
+    (function register() {
+        const wkItemInfo = (window.unsafeWindow || window).wkItemInfo;
+        if (!wkItemInfo) { setTimeout(register, 50); return; }
         ['vocabulary', 'kanaVocabulary'].forEach(type => {
-            window.wkItemInfo
+            wkItemInfo
                 .on('lesson')
                 .forType(type)
                 .under('meaning')
                 .append('Vocabulary Analysis', buildSection);
         });
-    });
+    })();
 
 })();
