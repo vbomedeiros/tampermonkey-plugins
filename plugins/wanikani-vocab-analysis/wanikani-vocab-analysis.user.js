@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Vocabulary Analysis
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.5.2
+// @version      1.6.0
 // @description  Adds a ChatGPT-powered etymology and analysis section to WaniKani vocabulary lessons
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/subject-lessons/*
@@ -18,7 +18,7 @@
 (function () {
     'use strict';
 
-    const CACHE_PREFIX = 'wk_analysis_v2_';
+    const CACHE_PREFIX = 'wk_analysis_v3_';
     const API_KEY_STORAGE = 'wk_analysis_api_key';
 
     const SYSTEM_PROMPT = `This GPT specializes in explaining the meaning and etymology of Japanese words, with a focus on kanji composition. When given a Japanese word, it provides a structured explanation in fluent English, following a consistent six-part layout:
@@ -69,23 +69,26 @@ Additional rules:
         return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: 'POST',
-                url: 'https://api.openai.com/v1/chat/completions',
+                url: 'https://api.openai.com/v1/responses',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`,
                 },
                 data: JSON.stringify({
-                    model: 'gpt-4o',
-                    messages: [
-                        { role: 'system', content: SYSTEM_PROMPT },
-                        { role: 'user', content: vocab },
-                    ],
-                    max_tokens: 1500,
+                    model: 'gpt-5.5',
+                    instructions: SYSTEM_PROMPT,
+                    input: vocab,
+                    reasoning: { effort: 'high' },
                 }),
                 onload(r) {
                     if (r.status === 200) {
                         try {
-                            resolve(JSON.parse(r.responseText).choices[0].message.content);
+                            const data = JSON.parse(r.responseText);
+                            const message = data.output.find(o => o.type === 'message');
+                            if (!message) { reject(new Error('No message in API response')); return; }
+                            const item = message.content.find(c => c.type === 'output_text');
+                            if (!item || !item.text.trim()) { reject(new Error('Empty response from API')); return; }
+                            resolve(item.text.trim());
                         } catch {
                             reject(new Error('Failed to parse API response'));
                         }
