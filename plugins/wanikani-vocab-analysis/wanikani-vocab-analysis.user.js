@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Vocabulary Analysis
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.0.0
+// @version      1.1.0
 // @description  Adds a ChatGPT-powered etymology and analysis section to WaniKani vocabulary lessons
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/subject-lessons/*
@@ -9,6 +9,7 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @connect      api.openai.com
+// @require      https://greasyfork.org/scripts/430565-wanikani-item-info-injector/code/WaniKani%20Item%20Info%20Injector.user.js?version=1380162
 // @license      MIT
 // @updateURL    https://raw.githubusercontent.com/vbomedeiros/tampermonkey-plugins/main/plugins/wanikani-vocab-analysis/wanikani-vocab-analysis.user.js
 // @downloadURL  https://raw.githubusercontent.com/vbomedeiros/tampermonkey-plugins/main/plugins/wanikani-vocab-analysis/wanikani-vocab-analysis.user.js
@@ -17,7 +18,6 @@
 (function () {
     'use strict';
 
-    const SECTION_ID = 'wk-vocab-analysis-section';
     const CACHE_PREFIX = 'wk_analysis_';
     const API_KEY_STORAGE = 'wk_analysis_api_key';
 
@@ -38,34 +38,6 @@ short definition sentence.
 6. **In Summary** – Produces a concise wrap-up (under 500 characters) of the word's meaning and how the kanji contribute to it. The model first generates a draft summary, counts its characters, and silently iterates at least once to expand and enrich the summary if it is too short or lacking context. The goal is to make full use of the 500-character limit while maintaining clarity and accuracy. This summary includes both the English meaning and each kanji's role or meaning, written in a style suitable for direct copy-paste into WaniKani notes for quick reference.
 
 The GPT always answers in English except for the dictionary definition in section 5, which is written in Japanese. It uses kanji or hiragana when referencing Japanese terms but never uses romaji. Explanations should remain clear, structured, and engaging for learners and curious readers.`;
-
-    // ── URL / subject helpers ────────────────────────────────────────────────
-
-    function getSubjectId() {
-        const m = location.pathname.match(/\/subject-lessons\/[^/]+\/(\d+)/);
-        return m ? m[1] : null;
-    }
-
-    function getVocabulary() {
-        const selectors = [
-            '.character-header__characters',
-            '.subject-character__characters-text',
-            '.page-header__prefix .subject-character__characters-text',
-        ];
-        for (const sel of selectors) {
-            const text = document.querySelector(sel)?.textContent?.trim();
-            if (text) return text;
-        }
-        return null;
-    }
-
-    function isVocabularyLesson() {
-        // Vocabulary items have a purple subject-character element; kanji/radicals don't.
-        return !!(
-            document.querySelector('.subject-character--vocabulary') ||
-            document.querySelector('[data-subject-type="vocabulary"]')
-        );
-    }
 
     // ── API key ──────────────────────────────────────────────────────────────
 
@@ -154,21 +126,14 @@ The GPT always answers in English except for the dictionary definition in sectio
 
     // ── Section UI ───────────────────────────────────────────────────────────
 
-    function buildAndInjectSection(subjectId, vocab) {
-        document.getElementById(SECTION_ID)?.remove();
+    function buildSection(itemObject) {
+        const { id, characters: vocab } = itemObject;
+        const cached = GM_getValue(CACHE_PREFIX + id, '');
 
-        const cached = GM_getValue(CACHE_PREFIX + subjectId, '');
-
-        const wrapper = document.createElement('section');
-        wrapper.id = SECTION_ID;
-        wrapper.style.cssText = 'padding:20px 0;border-top:2px solid #e0e0e0;margin-top:20px;';
+        const wrapper = document.createElement('div');
 
         const header = document.createElement('div');
         header.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:12px;';
-
-        const title = document.createElement('h2');
-        title.textContent = 'Vocabulary Analysis';
-        title.style.cssText = 'margin:0;font-size:1.1em;flex:1;';
 
         const analyzeBtn = document.createElement('button');
         analyzeBtn.textContent = cached ? 'Refresh' : 'Get Analysis';
@@ -179,7 +144,7 @@ The GPT always answers in English except for the dictionary definition in sectio
         keyBtn.title = 'Update OpenAI API key';
         keyBtn.style.cssText = 'padding:5px 10px;cursor:pointer;border-radius:4px;border:1px solid #ccc;background:#f5f5f5;font-size:.85em;color:#666;';
 
-        header.append(title, analyzeBtn, keyBtn);
+        header.append(analyzeBtn, keyBtn);
 
         const status = document.createElement('div');
         status.style.cssText = 'font-size:.9em;color:#666;margin-bottom:8px;min-height:1em;';
@@ -198,7 +163,7 @@ The GPT always answers in English except for the dictionary definition in sectio
                 const key = getApiKey();
                 if (!key) { status.textContent = 'No API key provided.'; return; }
                 const text = await callChatGPT(vocab, key);
-                GM_setValue(CACHE_PREFIX + subjectId, text);
+                GM_setValue(CACHE_PREFIX + id, text);
                 content.innerHTML = renderMarkdown(text);
                 analyzeBtn.textContent = 'Refresh';
                 status.textContent = '';
@@ -214,43 +179,17 @@ The GPT always answers in English except for the dictionary definition in sectio
             if (key) GM_setValue(API_KEY_STORAGE, key);
         });
 
-        // Inject before the bottom navigation (quiz button row)
-        const anchor =
-            document.querySelector('.subject-lessons__footer') ||
-            document.querySelector('.page-nav') ||
-            document.querySelector('.quiz-button-container');
-
-        if (anchor) {
-            anchor.insertAdjacentElement('beforebegin', wrapper);
-        } else {
-            (document.querySelector('main, .site-content-container') || document.body).appendChild(wrapper);
-        }
+        return wrapper;
     }
 
-    // ── SPA navigation watcher ───────────────────────────────────────────────
+    // ── Register with Item Info Injector ─────────────────────────────────────
 
-    let currentSubjectId = null;
-    let debounce = null;
+    ['vocabulary', 'kanaVocabulary'].forEach(type => {
+        window.wkItemInfo
+            .on('lesson')
+            .forType(type)
+            .under('meaning')
+            .append('Vocabulary Analysis', buildSection);
+    });
 
-    function tryInject() {
-        clearTimeout(debounce);
-        debounce = setTimeout(() => {
-            const subjectId = getSubjectId();
-            if (!subjectId) return;
-            if (subjectId === currentSubjectId && document.getElementById(SECTION_ID)) return;
-            if (!isVocabularyLesson()) return;
-            const vocab = getVocabulary();
-            if (!vocab) return;
-            buildAndInjectSection(subjectId, vocab);
-            currentSubjectId = subjectId;
-        }, 500);
-    }
-
-    const origPush = history.pushState.bind(history);
-    history.pushState = (...args) => { origPush(...args); currentSubjectId = null; tryInject(); };
-    window.addEventListener('popstate', () => { currentSubjectId = null; tryInject(); });
-
-    new MutationObserver(tryInject).observe(document.body, { childList: true, subtree: true });
-
-    tryInject();
 })();
