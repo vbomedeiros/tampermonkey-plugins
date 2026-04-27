@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Vocabulary Analysis
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.7.0
+// @version      1.7.1
 // @description  Adds a ChatGPT-powered etymology and analysis section to WaniKani vocabulary lessons
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/subject-lessons/*
@@ -64,20 +64,30 @@ Additional rules:
     }
 
     // ── ChatGPT call ─────────────────────────────────────────────────────────
+    //
+    // GM_xmlhttpRequest does not deliver onprogress incrementally for cross-origin
+    // SSE/chunked responses in Tampermonkey's sandbox — it fires zero times or once
+    // at the very end. We keep stream:true as a server hint (reduces TTFB) but parse
+    // the complete SSE body in onload.
+
+    function parseSSE(text) {
+        let result = '';
+        for (const line of text.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            const payload = line.slice(6).trim();
+            if (payload === '[DONE]') break;
+            try {
+                const event = JSON.parse(payload);
+                if (event.type === 'response.output_text.delta' && event.delta) {
+                    result += event.delta;
+                }
+            } catch {}
+        }
+        return result;
+    }
 
     function callChatGPT(vocab, apiKey, onDelta) {
         return new Promise((resolve, reject) => {
-            let lastIndex = 0;
-            let buffer = '';
-            let accumulated = '';
-            let settled = false;
-
-            function settle(fn, val) {
-                if (settled) return;
-                settled = true;
-                fn(val);
-            }
-
             GM_xmlhttpRequest({
                 method: 'POST',
                 url: 'https://api.openai.com/v1/responses',
@@ -92,42 +102,21 @@ Additional rules:
                     reasoning: { effort: 'high' },
                     stream: true,
                 }),
-                onprogress(r) {
-                    if (settled) return;
-                    const newData = r.responseText.slice(lastIndex);
-                    lastIndex = r.responseText.length;
-                    buffer += newData;
-
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop(); // keep incomplete last line in buffer
-
-                    for (const line of lines) {
-                        if (!line.startsWith('data: ')) continue;
-                        const payload = line.slice(6).trim();
-                        if (payload === '[DONE]') { settle(resolve, accumulated); return; }
-                        try {
-                            const event = JSON.parse(payload);
-                            if (event.type === 'response.output_text.delta' && event.delta) {
-                                accumulated += event.delta;
-                                onDelta?.(accumulated);
-                            }
-                        } catch {}
-                    }
-                },
                 onload(r) {
-                    if (settled) return;
                     if (r.status === 401) {
                         GM_setValue(API_KEY_STORAGE, '');
-                        settle(reject, new Error('Invalid API key — cleared. Click again to re-enter.'));
+                        reject(new Error('Invalid API key — cleared. Click again to re-enter.'));
                     } else if (r.status !== 200) {
                         let msg = `API error ${r.status}`;
                         try { msg += ': ' + JSON.parse(r.responseText).error?.message; } catch {}
-                        settle(reject, new Error(msg));
+                        reject(new Error(msg));
                     } else {
-                        settle(resolve, accumulated);
+                        const text = parseSSE(r.responseText);
+                        onDelta?.(text);
+                        resolve(text);
                     }
                 },
-                onerror() { settle(reject, new Error('Network request failed')); },
+                onerror() { reject(new Error('Network request failed')); },
             });
         });
     }
