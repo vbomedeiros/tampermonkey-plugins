@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Progress Compass
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.0.0
+// @version      1.0.1
 // @description  Self-regulating dashboard: adaptive kanji quota keeps the vocab pipeline flowing, with level-up progress always front and center.
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/*
@@ -347,11 +347,11 @@
                      s.apprentice >= s.ceiling * 0.9       ? 'wkpc-pill--warn'  : '';
 
         let pills =
-            `<span class="wkpc-pill ${kCls}">漢 ${s.kanjiToday}/${s.quota}${s.kLeft === 0 ? ' ✓' : ''}</span>` +
-            `<span class="wkpc-pill ${vCls}">語 ${s.vocabToday}/${s.vGoal}${s.vLeft === 0 ? ' ✓' : ''}</span>` +
-            `<span class="wkpc-pill ${aCls}">App ${s.apprentice}/${s.ceiling}</span>`;
+            `<span class="wkpc-pill ${kCls}">漢字 ${s.kanjiToday}/${s.quota}${s.kLeft === 0 ? ' ✓' : ''}</span>` +
+            `<span class="wkpc-pill ${vCls}">語彙 ${s.vocabToday}/${s.vGoal}${s.vLeft === 0 ? ' ✓' : ''}</span>` +
+            `<span class="wkpc-pill ${aCls}">Apprentice ${s.apprentice}/${s.ceiling}</span>`;
         if (s.radicalQLen > 0)
-            pills += `<span class="wkpc-pill">◎ Rad ${s.radicalQLen}</span>`;
+            pills += `<span class="wkpc-pill">Radicals ${s.radicalQLen}</span>`;
         wrap.querySelector('#wkpc-pills').innerHTML = pills;
 
         // Vocab pipeline bar (0–7 day scale)
