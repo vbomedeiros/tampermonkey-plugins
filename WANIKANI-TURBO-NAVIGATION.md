@@ -117,6 +117,52 @@ notes before bumping the version.
 
 ---
 
+## Non-item pages (search, dashboard, etc.)
+
+`wkItemInfo` only works on item pages (lessons, reviews, vocabulary/kanji pages). For
+any other page — search results, the dashboard, etc. — use `turbo:load` with a
+MutationObserver fallback instead.
+
+The fallback is necessary because WaniKani sometimes loads page content into a Turbo
+Frame asynchronously: `turbo:load` fires before the target element is in the DOM, so a
+plain `document.querySelector` returns null. The observer catches the element as soon
+as it appears.
+
+```js
+// @match        https://www.wanikani.com/*   ← still must be broad
+
+function inject() {
+    if (!location.pathname.startsWith('/target-path')) return false;
+    if (document.getElementById('my-injected-element')) return true; // already done
+
+    const anchor = document.querySelector('.some-element');
+    if (!anchor) return false;
+
+    // … build and insert your element …
+    return true;
+}
+
+document.addEventListener('turbo:load', () => {
+    if (inject()) return;
+
+    // Target element not yet in DOM — watch for it (async Turbo Frame)
+    const observer = new MutationObserver(() => {
+        if (inject()) observer.disconnect();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => observer.disconnect(), 5000); // safety net
+});
+```
+
+Key points:
+- `inject()` returns `true` on success (or if already injected) so the observer disconnects immediately
+- The `setTimeout` disconnects after 5 s to prevent a leaked observer if the element never appears
+- The `#id` guard in `inject()` prevents double-injection if both the immediate call and the observer fire
+
+Real example: `wanikani-jisho-search-link` uses this pattern for the `/search` page.
+
+---
+
 ## Real example — `wanikani-to-anki` (before/after)
 
 ### Before (v4.8.0 — broken on Turbo nav)
