@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Progress Compass
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.0.1
+// @version      1.0.2
 // @description  Self-regulating dashboard: adaptive kanji quota keeps the vocab pipeline flowing, with level-up progress always front and center.
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/*
@@ -122,6 +122,13 @@
         const nearGuru     = levelKanji.filter(i => i.assignments.srs_stage === 3 || i.assignments.srs_stage === 4);
         const totalSupply  = (vocabQ.length + nearGuru.length * 3) / Math.max(1, vGoal);
 
+        // Kanji breakdown by SRS stage (for ETA detail display)
+        const kanjiByStage = {};
+        for (const k of levelKanji.filter(i => i.assignments.srs_stage < 5)) {
+            const st = k.assignments.srs_stage || 0;
+            kanjiByStage[st] = (kanjiByStage[st] || 0) + 1;
+        }
+
         // Adaptive kanji quota based on pipeline health
         const quota = adaptiveQuota(totalSupply, settings);
         const kLeft = Math.max(0, quota - kanjiToday);
@@ -159,6 +166,9 @@
             vocabToday, vGoal, vLeft, vocabQLen: vocabQ.length,
             radicalQLen: radicalQ.length,
             totalSupply, nextReview, eta, isSurge,
+            nearGuruCount: nearGuru.length,
+            kanjiMax: settings.kanji_max,
+            kanjiByStage,
         };
     }
 
@@ -260,6 +270,8 @@
         .wkpc-countdown { font-size:12px; margin-top:8px; opacity:.85; }
         .wkpc-countdown--now    { color:#ff7675; font-weight:700; opacity:1; }
         .wkpc-countdown--urgent { color:#fdcb6e; font-weight:700; opacity:1; }
+        .wkpc-detail { font-size:11px; opacity:.6; margin-top:4px;
+            font-family:ui-monospace,'SF Mono',Menlo,monospace; letter-spacing:-.1px; }
         `;
         document.head.appendChild(el);
     }
@@ -281,6 +293,7 @@
                     <div class="wkpc-fill wkpc-fill--gold" id="wkpc-guru-bar" style="width:0%"></div>
                 </div>
                 <div class="wkpc-eta" id="wkpc-eta"></div>
+                <div class="wkpc-detail" id="wkpc-eta-detail"></div>
             </div>
             <div class="wkpc-row">
                 <div class="wkpc-pills" id="wkpc-pills"></div>
@@ -292,6 +305,7 @@
                     <div class="wkpc-fill wkpc-fill--green" id="wkpc-pipe-bar" style="width:0%"></div>
                 </div>
                 <div class="wkpc-pipe-why" id="wkpc-pipe-why"></div>
+                <div class="wkpc-detail" id="wkpc-pipe-detail"></div>
             </div>
             <div class="wkpc-row">
                 <div class="wkpc-action">
@@ -337,6 +351,7 @@
         } else {
             etaEl.textContent = '';
         }
+        wrap.querySelector('#wkpc-eta-detail').textContent = etaDetail(s);
 
         // Row 2 — today's plan pills
         const kCls = s.kLeft === 0      ? 'wkpc-pill--done'  :
@@ -362,6 +377,7 @@
             (s.totalSupply < 1 ? 'wkpc-fill--red' : s.totalSupply > 5 ? 'wkpc-fill--orange' : 'wkpc-fill--green');
         wrap.querySelector('#wkpc-supply').textContent = `${s.totalSupply.toFixed(1)} days`;
         wrap.querySelector('#wkpc-pipe-why').textContent = pipelineWhy(s);
+        wrap.querySelector('#wkpc-pipe-detail').textContent = pipelineDetail(s);
 
         // Row 3 — action message
         const { msg, sub } = actionText(s);
@@ -393,6 +409,34 @@
         if (s.totalSupply > 4) return `Pipeline healthy — ${s.quota} kanji/day keeps flow steady`;
         if (s.totalSupply > 1) return `Normal pace — ${s.quota} kanji/day`;
         return `Queue running dry — doing up to ${s.quota} kanji to keep vocab flowing`;
+    }
+
+    function etaDetail(s) {
+        if (!s.kanjiByStage) return '';
+        const parts = [];
+        if (s.kanjiByStage[0] > 0) parts.push(`${s.kanjiByStage[0]} not started`);
+        [1, 2, 3, 4].forEach(st => {
+            if (s.kanjiByStage[st] > 0) parts.push(`${s.kanjiByStage[st]} App${st}`);
+        });
+        return parts.join(' · ');
+    }
+
+    function pipelineDetail(s) {
+        const incoming = s.nearGuruCount * 3;
+        const math = s.nearGuruCount > 0
+            ? `${s.vocabQLen} queued + ~${incoming} incoming (${s.nearGuruCount} near-Guru × 3) ÷ ${s.vGoal}/day = ${s.totalSupply.toFixed(1)}d`
+            : `${s.vocabQLen} queued ÷ ${s.vGoal}/day = ${s.totalSupply.toFixed(1)}d`;
+
+        const thresholds = [
+            { supply: 7, quota: 2 },
+            { supply: 4, quota: 3 },
+            { supply: 1, quota: s.kanjiMax },
+        ];
+        const bumps = thresholds
+            .filter(t => s.totalSupply > t.supply)
+            .map(t => `do ${Math.ceil((s.totalSupply - t.supply) * s.vGoal)} vocab → ${t.quota} kanji/day`);
+
+        return bumps.length ? `${math} · ${bumps.join(' · ')}` : math;
     }
 
     function actionText(s) {
