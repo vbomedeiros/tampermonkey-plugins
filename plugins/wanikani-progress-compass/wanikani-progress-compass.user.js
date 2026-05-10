@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Progress Compass
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.0.3
+// @version      1.0.4
 // @description  Self-regulating dashboard: adaptive kanji quota keeps the vocab pipeline flowing, with level-up progress always front and center.
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/*
@@ -279,9 +279,10 @@
         .wkpc-zone--normal  { background:rgba(39,174,96,.85); }
         .wkpc-zone--healthy { background:rgba(241,196,15,.75); }
         .wkpc-zone--full    { background:rgba(231,76,60,.8); }
-        .wkpc-zone-axis { position:relative; height:18px; margin-top:3px; }
-        .wkpc-zone-tick { position:absolute; font-size:10px; opacity:.55; }
-        .wkpc-zone-now  { position:absolute; font-size:11px; font-weight:700; white-space:nowrap; }
+        .wkpc-zone-axis { position:relative; height:30px; margin-top:3px; }
+        .wkpc-zone-tick { position:absolute; font-size:10px; opacity:.55; line-height:1.3; text-align:center; }
+        .wkpc-zone-tick-v { font-size:9px; display:block; opacity:.85; }
+        .wkpc-zone-now  { position:absolute; font-size:11px; font-weight:700; white-space:nowrap; text-align:right; }
         `;
         document.head.appendChild(el);
     }
@@ -454,12 +455,18 @@
             ? 'right:0'
             : `left:${markerPct.toFixed(1)}%;transform:translateX(-50%)`;
 
+        const vocabTo = t => Math.round(t * s.vGoal);
+        const tick = (label, style, vocab) => {
+            const sub = vocab != null ? `<span class="wkpc-zone-tick-v">${vocab}v</span>` : '';
+            return `<span class="wkpc-zone-tick" style="${style}">${label}${sub}</span>`;
+        };
+
         const axisHtml =
-            `<span class="wkpc-zone-tick" style="left:0">0</span>` +
-            `<span class="wkpc-zone-tick" style="left:${pct(1)}%;transform:translateX(-50%)">1d</span>` +
-            `<span class="wkpc-zone-tick" style="left:${pct(4)}%;transform:translateX(-50%)">4d</span>` +
-            (supply > 7 ? `<span class="wkpc-zone-tick" style="left:${pct(7)}%;transform:translateX(-50%)">7d</span>` : '') +
-            `<span class="wkpc-zone-now" style="${markerStyle}">▲ ${supply.toFixed(1)}d</span>`;
+            tick('0', 'left:0', null) +
+            tick('1d', `left:${pct(1)}%;transform:translateX(-50%)`, vocabTo(1)) +
+            tick('4d', `left:${pct(4)}%;transform:translateX(-50%)`, vocabTo(4)) +
+            (supply > 7 ? tick('7d', `left:${pct(7)}%;transform:translateX(-50%)`, vocabTo(7)) : '') +
+            `<span class="wkpc-zone-now" style="${markerStyle}">▲ ${supply.toFixed(1)}d<span class="wkpc-zone-tick-v">${s.vocabQLen}v</span></span>`;
 
         return `<div class="wkpc-zone-bar">${barHtml}</div><div class="wkpc-zone-axis">${axisHtml}</div>`;
     }
@@ -471,7 +478,7 @@
                          sub: 'Clear reviews before taking new lessons.' };
             case 'SURGE':
                 return { msg: 'Level-up surge! Focus on vocab first',
-                         sub: `${s.vocabQLen} lessons pending (~${Math.ceil(s.vocabQLen / s.vGoal)} days to clear).` };
+                         sub: `${s.vocabQLen} vocab lessons pending (~${Math.ceil(s.vocabQLen / s.vGoal)} days to clear).` };
             case 'KANJI_URGENT':
                 return { msg: `Do ${s.kLeft} kanji now — vocab queue running dry`,
                          sub: 'Then continue with vocab lessons.' };
@@ -484,7 +491,7 @@
             }
             case 'KANJI_DONE':
                 return { msg: `Kanji done ✓ — do ${s.vLeft} more vocab`,
-                         sub: `${s.vocabQLen} in queue.` };
+                         sub: `${s.vocabQLen} vocab in queue.` };
             case 'ALL_CLEAR':
                 return { msg: 'All done for now!',
                          sub: 'Come back when reviews are ready.' };
