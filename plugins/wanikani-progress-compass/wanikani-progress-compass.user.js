@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Progress Compass
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.0.2
+// @version      1.0.3
 // @description  Self-regulating dashboard: adaptive kanji quota keeps the vocab pipeline flowing, with level-up progress always front and center.
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/*
@@ -272,6 +272,16 @@
         .wkpc-countdown--urgent { color:#fdcb6e; font-weight:700; opacity:1; }
         .wkpc-detail { font-size:11px; opacity:.6; margin-top:4px;
             font-family:ui-monospace,'SF Mono',Menlo,monospace; letter-spacing:-.1px; }
+        .wkpc-zone-bar { display:flex; height:18px; border-radius:4px; overflow:hidden; margin-top:6px; }
+        .wkpc-zone { display:flex; align-items:center; justify-content:center;
+            font-size:10px; font-weight:700; overflow:hidden; white-space:nowrap; }
+        .wkpc-zone--urgent  { background:rgba(230,126,34,.85); }
+        .wkpc-zone--normal  { background:rgba(39,174,96,.85); }
+        .wkpc-zone--healthy { background:rgba(241,196,15,.75); }
+        .wkpc-zone--full    { background:rgba(231,76,60,.8); }
+        .wkpc-zone-axis { position:relative; height:18px; margin-top:3px; }
+        .wkpc-zone-tick { position:absolute; font-size:10px; opacity:.55; }
+        .wkpc-zone-now  { position:absolute; font-size:11px; font-weight:700; white-space:nowrap; }
         `;
         document.head.appendChild(el);
     }
@@ -305,7 +315,7 @@
                     <div class="wkpc-fill wkpc-fill--green" id="wkpc-pipe-bar" style="width:0%"></div>
                 </div>
                 <div class="wkpc-pipe-why" id="wkpc-pipe-why"></div>
-                <div class="wkpc-detail" id="wkpc-pipe-detail"></div>
+                <div id="wkpc-zone-ruler"></div>
             </div>
             <div class="wkpc-row">
                 <div class="wkpc-action">
@@ -374,10 +384,13 @@
         const pipeBar = wrap.querySelector('#wkpc-pipe-bar');
         pipeBar.style.width = `${supplyPct}%`;
         pipeBar.className = 'wkpc-fill ' +
-            (s.totalSupply < 1 ? 'wkpc-fill--red' : s.totalSupply > 5 ? 'wkpc-fill--orange' : 'wkpc-fill--green');
-        wrap.querySelector('#wkpc-supply').textContent = `${s.totalSupply.toFixed(1)} days`;
+            (s.totalSupply < 1 ? 'wkpc-fill--orange' : s.totalSupply > 7 ? 'wkpc-fill--red' : 'wkpc-fill--green');
+        const zoneLabel = s.totalSupply > 7 ? '> 7 days' :
+                          s.totalSupply > 4 ? '4–7 days' :
+                          s.totalSupply > 1 ? '1–4 days' : '< 1 day';
+        wrap.querySelector('#wkpc-supply').textContent = `${s.totalSupply.toFixed(1)} days (${zoneLabel})`;
         wrap.querySelector('#wkpc-pipe-why').textContent = pipelineWhy(s);
-        wrap.querySelector('#wkpc-pipe-detail').textContent = pipelineDetail(s);
+        wrap.querySelector('#wkpc-zone-ruler').innerHTML = buildZoneRuler(s);
 
         // Row 3 — action message
         const { msg, sub } = actionText(s);
@@ -421,22 +434,34 @@
         return parts.join(' · ');
     }
 
-    function pipelineDetail(s) {
-        const incoming = s.nearGuruCount * 3;
-        const math = s.nearGuruCount > 0
-            ? `${s.vocabQLen} queued + ~${incoming} incoming (${s.nearGuruCount} near-Guru × 3) ÷ ${s.vGoal}/day = ${s.totalSupply.toFixed(1)}d`
-            : `${s.vocabQLen} queued ÷ ${s.vGoal}/day = ${s.totalSupply.toFixed(1)}d`;
+    function buildZoneRuler(s) {
+        const supply = s.totalSupply;
+        const scale = Math.max(7, supply);
+        const pct = v => (v / scale * 100).toFixed(1);
 
-        const thresholds = [
-            { supply: 7, quota: 2 },
-            { supply: 4, quota: 3 },
-            { supply: 1, quota: s.kanjiMax },
+        const zones = [
+            { cls: 'urgent',  w: 1 / scale * 100,         label: `${s.kanjiMax}/day` },
+            { cls: 'normal',  w: 3 / scale * 100,          label: '3/day' },
+            { cls: 'healthy', w: 3 / scale * 100,          label: '2/day' },
+            ...(supply > 7 ? [{ cls: 'full', w: (supply - 7) / scale * 100, label: '0/day' }] : []),
         ];
-        const bumps = thresholds
-            .filter(t => s.totalSupply > t.supply)
-            .map(t => `do ${Math.ceil((s.totalSupply - t.supply) * s.vGoal)} vocab → ${t.quota} kanji/day`);
+        const barHtml = zones.map(z =>
+            `<div class="wkpc-zone wkpc-zone--${z.cls}" style="width:${z.w.toFixed(1)}%">${z.label}</div>`
+        ).join('');
 
-        return bumps.length ? `${math} · ${bumps.join(' · ')}` : math;
+        const markerPct = supply / scale * 100;
+        const markerStyle = markerPct > 90
+            ? 'right:0'
+            : `left:${markerPct.toFixed(1)}%;transform:translateX(-50%)`;
+
+        const axisHtml =
+            `<span class="wkpc-zone-tick" style="left:0">0</span>` +
+            `<span class="wkpc-zone-tick" style="left:${pct(1)}%;transform:translateX(-50%)">1d</span>` +
+            `<span class="wkpc-zone-tick" style="left:${pct(4)}%;transform:translateX(-50%)">4d</span>` +
+            (supply > 7 ? `<span class="wkpc-zone-tick" style="left:${pct(7)}%;transform:translateX(-50%)">7d</span>` : '') +
+            `<span class="wkpc-zone-now" style="${markerStyle}">▲ ${supply.toFixed(1)}d</span>`;
+
+        return `<div class="wkpc-zone-bar">${barHtml}</div><div class="wkpc-zone-axis">${axisHtml}</div>`;
     }
 
     function actionText(s) {
