@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         WaniKani Kanji Vocabulary in Lessons
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.0.0
+// @version      1.1.0
 // @description  Show vocabulary for kanji during WaniKani lessons on the "Examples" tab.
 // @author       Victor Medeiros
-// @match        https://www.wanikani.com/subject-lessons/*
+// @match        https://www.wanikani.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=wanikani.com
-// @require      https://greasyfork.org/scripts/430565-wanikani-item-info-injector/code/WaniKani%20Item%20Info%20Injector.user.js?version=1380162
+// @require      https://greasyfork.org/scripts/430565-wanikani-item-info-injector/code/WaniKani%20Item%20Info%20Injector.user.js?version=1326536
 // @grant        none
 // @license      MIT
 // @updateURL    https://raw.githubusercontent.com/vbomedeiros/tampermonkey-plugins/main/plugins/wanikani-kanji-vocab-lessons/wanikani-kanji-vocab-lessons.user.js
@@ -16,90 +16,95 @@
 (function() {
     'use strict';
 
-    // Initialize WaniKani Open Framework
     if (!window.wkof) {
-        alert('WaniKani Level Up Speed Assistant requires Wanikani Open Framework.\n' +
+        alert('WaniKani Kanji Vocabulary in Lessons requires WaniKani Open Framework.\n' +
               'You will now be forwarded to installation instructions.');
         window.location.href = 'https://community.wanikani.com/t/instructions-installing-wanikani-open-framework/28549';
         return;
     }
 
-    window.wkof.include('ItemData');
-    window.wkof.ready('ItemData').then(load_vocab);
+    let items = null;
 
-    function load_vocab() {
-        window.wkof.ItemData.get_items('subjects').then(process_items);
+    window.wkof.include('ItemData');
+    window.wkof.ready('ItemData')
+        .then(() => window.wkof.ItemData.get_items('subjects'))
+        .then(fetchedItems => {
+            items = fetchedItems;
+            register();
+        });
+
+    function register() {
+        if (!window.wkItemInfo) { setTimeout(register, 50); return; }
+        window.wkItemInfo
+            .on('lesson')
+            .forType('kanji')
+            .under('examples')
+            .append('Vocabulary Examples (extended)', buildSection);
     }
 
-    function process_items(items) {
-        window.wkItemInfo.on("lesson").forType("kanji").under("examples").append(
-            "Vocabulary Examples (extended)",
-            kanjiObject => {
-                const kanjiData = items.find(item => item.id === kanjiObject.id);
-                if (kanjiData) {
-                    const vocabList = kanjiData.data.amalgamation_subject_ids
-                    .map(example_id => items.find(item => item.id === example_id))
-                    .sort((a, b) => a.data.level - b.data.level);
+    function buildSection(kanjiObject) {
+        const kanjiData = items.find(item => item.id === kanjiObject.id);
+        if (!kanjiData) return 'Failed to find Kanji object';
 
-                    const section = document.createElement('section');
-                    section.id = 'section-amalgamations';
-                    section.className = 'subject-section__content';
-                    section.setAttribute('data-toggle-target', 'content');
+        const vocabList = kanjiData.data.amalgamation_subject_ids
+            .map(example_id => items.find(item => item.id === example_id))
+            .sort((a, b) => a.data.level - b.data.level);
 
-                    const div = document.createElement('div');
-                    div.className = 'subject-character-grid subject-character-grid--single-column';
+        const section = document.createElement('section');
+        section.id = 'section-amalgamations';
+        section.className = 'subject-section__content';
+        section.setAttribute('data-toggle-target', 'content');
 
-                    const ol = document.createElement('ol');
-                    ol.className = 'subject-character-grid__items';
+        const div = document.createElement('div');
+        div.className = 'subject-character-grid subject-character-grid--single-column';
 
-                    vocabList.forEach(vocab => {
-                        if (vocab && vocab.data) {
-                            const li = document.createElement('li');
-                            li.className = 'subject-character-grid__item';
+        const ol = document.createElement('ol');
+        ol.className = 'subject-character-grid__items';
 
-                            const a = document.createElement('a');
-                            a.className = 'subject-character subject-character--vocabulary subject-character--grid subject-character--unlocked';
-                            a.title = vocab.data.readings[0].reading;
-                            a.href = `https://www.wanikani.com/vocabulary/${vocab.data.slug}`;
-                            a.setAttribute('data-turbo-frame', '_blank');
+        vocabList.forEach(vocab => {
+            if (vocab && vocab.data) {
+                const li = document.createElement('li');
+                li.className = 'subject-character-grid__item';
 
-                            const contentDiv = document.createElement('div');
-                            contentDiv.className = 'subject-character__content';
+                const a = document.createElement('a');
+                a.className = 'subject-character subject-character--vocabulary subject-character--grid subject-character--unlocked';
+                a.title = vocab.data.readings[0].reading;
+                a.href = `https://www.wanikani.com/vocabulary/${vocab.data.slug}`;
+                a.setAttribute('data-turbo-frame', '_blank');
 
-                            const spanCharacters = document.createElement('span');
-                            spanCharacters.className = 'subject-character__characters';
-                            spanCharacters.lang = 'ja';
-                            spanCharacters.textContent = vocab.data.characters;
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'subject-character__content';
 
-                            const infoDiv = document.createElement('div');
-                            infoDiv.className = 'subject-character__info';
+                const spanCharacters = document.createElement('span');
+                spanCharacters.className = 'subject-character__characters';
+                spanCharacters.lang = 'ja';
+                spanCharacters.textContent = vocab.data.characters;
 
-                            const spanReading = document.createElement('span');
-                            spanReading.className = 'subject-character__reading';
-                            spanReading.textContent = vocab.data.readings[0].reading;
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'subject-character__info';
 
-                            const spanMeaning = document.createElement('span');
-                            spanMeaning.className = 'subject-character__meaning';
-                            spanMeaning.textContent = vocab.data.meanings[0].meaning + ` (Level ${vocab.data.level})`;
+                const spanReading = document.createElement('span');
+                spanReading.className = 'subject-character__reading';
+                spanReading.textContent = vocab.data.readings[0].reading;
 
-                            infoDiv.appendChild(spanReading);
-                            infoDiv.appendChild(spanMeaning);
+                const spanMeaning = document.createElement('span');
+                spanMeaning.className = 'subject-character__meaning';
+                spanMeaning.textContent = vocab.data.meanings[0].meaning + ` (Level ${vocab.data.level})`;
 
-                            contentDiv.appendChild(spanCharacters);
-                            contentDiv.appendChild(infoDiv);
+                infoDiv.appendChild(spanReading);
+                infoDiv.appendChild(spanMeaning);
 
-                            a.appendChild(contentDiv);
-                            li.appendChild(a);
-                            ol.appendChild(li);
-                        }
-                    });
+                contentDiv.appendChild(spanCharacters);
+                contentDiv.appendChild(infoDiv);
 
-                    div.appendChild(ol);
-                    section.appendChild(div);
-                    return section;
-                }
-                return 'Failed to find Kanji object';
+                a.appendChild(contentDiv);
+                li.appendChild(a);
+                ol.appendChild(li);
             }
-        );
+        });
+
+        div.appendChild(ol);
+        section.appendChild(div);
+        return section;
     }
 })();
