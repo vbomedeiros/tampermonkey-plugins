@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani to Anki
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      4.9.1
+// @version      5.0.1
 // @description  Build easy-to-copy HTML source for Anki HTML editor
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/vocabulary/*
@@ -14,9 +14,29 @@
 // ==/UserScript==
 
 ;(function () {
+    if (!window.wkof) {
+        alert('WaniKani to Anki requires WaniKani Open Framework.\n' +
+              'You will now be forwarded to installation instructions.');
+        window.location.href = 'https://community.wanikani.com/t/instructions-installing-wanikani-open-framework/28549';
+        return;
+    }
+
+    let subjectsById;
+
+    window.wkof.include('ItemData');
+    window.wkof.ready('ItemData')
+        .then(() => window.wkof.ItemData.get_items('subjects'))
+        .then(subjects => {
+            subjectsById = new Map(subjects.map(subject => [subject.id, subject]));
+            register();
+        })
+        .catch(err => {
+            console.error('WaniKani to Anki: failed to load WKOF subject data', err);
+        });
+
     // Register with the injector so the section is re-built on every Turbo
     // navigation, not just on the initial hard load.
-    (function register() {
+    function register() {
         if (!window.wkItemInfo) { setTimeout(register, 50); return; }
         ['vocabulary', 'kanaVocabulary'].forEach(type => {
             window.wkItemInfo
@@ -25,11 +45,11 @@
                 .under('meaning')
                 .append('For Anki HTML import', buildSection);
         });
-    })();
+    }
 
-    function buildSection(_itemObject) {
+    function buildSection(itemObject) {
         console.log("WaniKani to Anki: notified!");
-        return loadWanikaniToAnkiSection();
+        return loadWanikaniToAnkiSection(itemObject);
     }
 
     function inlineMarkStyles(root) {
@@ -183,7 +203,7 @@
         return formatHtmlForReading(clone);
     }
 
-    function loadWanikaniToAnkiSection() {
+    function loadWanikaniToAnkiSection(itemObject) {
         // The injector wraps the returned element in a titled <section>.
         // Return a plain container with just the controls and content.
         const container = document.createElement("div");
@@ -256,13 +276,92 @@
             }
         }
 
-        function cloneHint(hintText) {
-            if (!hintText) return;
+        function apiMarkupFragment(html) {
+            const template = document.createElement("template");
+            template.innerHTML = html || "";
+
+            const markupTitles = {
+                radical: "Radical",
+                kanji: "Kanji",
+                vocabulary: "Vocabulary",
+                meaning: "Meaning",
+                reading: "Reading",
+            };
+
+            template.content
+                .querySelectorAll(Object.keys(markupTitles).join(","))
+                .forEach((element) => {
+                    const mark = document.createElement("mark");
+                    mark.title = markupTitles[element.tagName.toLowerCase()];
+                    mark.innerHTML = element.innerHTML;
+                    element.replaceWith(mark);
+                });
+
+            // API-created <mark> elements do not have WaniKani's CSS classes,
+            // so apply the same inline colors used by the copied Anki HTML.
+            inlineMarkStyles(template.content);
+
+            return template.content;
+        }
+
+        function appendApiText(html, initialString) {
+            if (!html) return;
+
+            const paragraph = document.createElement("p");
+            paragraph.classList.add("subject-section__text");
+            if (initialString) paragraph.append(initialString);
+            paragraph.append(apiMarkupFragment(html));
+            ankiContent.appendChild(paragraph);
+        }
+
+        function appendApiHint(html) {
+            if (!html) return;
 
             appendBreak();
-            const hintParagraph = document.createElement("p");
-            hintParagraph.textContent = "Hint: " + hintText.textContent;
-            ankiContent.appendChild(hintParagraph);
+            const paragraph = document.createElement("p");
+            paragraph.append("Hint: ");
+            paragraph.append(apiMarkupFragment(html));
+            ankiContent.appendChild(paragraph);
+        }
+
+        function alternativeMeanings(kanjiData) {
+            const primary = kanjiData.meanings.find(meaning => meaning.primary);
+            const alternatives = [
+                ...kanjiData.meanings
+                    .filter(meaning => meaning !== primary && meaning.accepted_answer)
+                    .map(meaning => meaning.meaning),
+                ...(kanjiData.auxiliary_meanings || [])
+                    .filter(meaning => meaning.type === "whitelist")
+                    .map(meaning => meaning.meaning),
+            ];
+
+            return [...new Map(
+                alternatives.map(meaning => [meaning.toLocaleLowerCase(), meaning])
+            ).values()];
+        }
+
+        function appendKanji(kanji) {
+            const data = kanji.data;
+            const primaryMeaning =
+                data.meanings.find(meaning => meaning.primary)?.meaning ||
+                data.meanings[0]?.meaning ||
+                "";
+            const alternatives = alternativeMeanings(data);
+            const alternativesText = alternatives.length > 0
+                ? ", " + alternatives.join(", ")
+                : "";
+
+            appendBreak();
+            appendApiText(
+                data.meaning_mnemonic,
+                data.characters + "（" + primaryMeaning + alternativesText +
+                    "、Level " + data.level + "）："
+            );
+            appendApiHint(data.meaning_hint);
+
+            appendBreak();
+            appendApiText(data.reading_mnemonic);
+            appendApiHint(data.reading_hint);
         }
 
         const vocabulary =
@@ -310,73 +409,15 @@
             document.querySelectorAll(".subject-section--reading .subject-section__subsection p.subject-section__text")
         );
 
-        const kanjis = document.querySelectorAll("#section-components a.subject-character--kanji");
+        const vocabularySubject = subjectsById.get(itemObject.id);
+        const componentIds = vocabularySubject?.data.component_subject_ids || [];
 
-        if (kanjis.length === 0) {
-            setTimeout(refreshHtmlSource, 300);
-        }
+        componentIds
+            .map(id => subjectsById.get(id))
+            .filter(subject => subject?.object === "kanji")
+            .forEach(appendKanji);
 
-        for (let i = 0; i < kanjis.length; i++) {
-            const kanjiLink = kanjis[i];
-            const kanjiIFrame = document.createElement("iframe");
-            kanjiIFrame.src = kanjiLink.href;
-            kanjiIFrame.style.display = "none";
-            document.querySelector(".site-content-container").insertAdjacentElement("afterend", kanjiIFrame);
-
-            setTimeout(function (kIframe) {
-                try {
-                    const doc = kIframe.contentWindow.document;
-
-                    appendBreak();
-
-                    const meaningSections = doc.querySelectorAll(".subject-section__meanings");
-                    let kanjiMeaningAlternatives = "";
-
-                    for (let j = 0; j < meaningSections.length; j++) {
-                        const titleNode = meaningSections[j].querySelector(".subject-section__meanings-title");
-                        const itemsNode = meaningSections[j].querySelector(".subject-section__meanings-items");
-                        if (!titleNode || !itemsNode) continue;
-
-                        const meaningTitle = titleNode.textContent;
-                        if (meaningTitle === "Alternatives" || meaningTitle === "Alternative") {
-                            kanjiMeaningAlternatives = ", " + itemsNode.textContent;
-                        }
-                    }
-
-                    const kanjiChar =
-                        doc.querySelector(".page-header__prefix .subject-character__characters-text")?.textContent || "";
-                    const kanjiMeaning =
-                        doc.querySelector(".page-header__title-text")?.textContent || "";
-                    const kanjiLevel =
-                        doc.querySelector(".subject-page-header__level")?.textContent.trim() || "";
-
-                    cloneElements(
-                        doc.querySelectorAll(".subject-section--meaning .subject-section__subsection p.subject-section__text"),
-                        kanjiChar + "（" + kanjiMeaning + kanjiMeaningAlternatives + "、" + kanjiLevel + "）："
-                    );
-
-                    cloneHint(
-                        doc.querySelector(".subject-section--meaning .subject-hint__text")
-                    );
-
-                    appendBreak();
-
-                    cloneElements(
-                        doc.querySelectorAll(".subject-section--reading .subject-section__subsection p.subject-section__text")
-                    );
-
-                    cloneHint(
-                        doc.querySelector(".subject-section--reading .subject-hint__text")
-                    );
-
-                    refreshHtmlSource();
-                } catch (err) {
-                    console.error("WaniKani to Anki: failed to process kanji iframe", err);
-                }
-            }, 1000 + 1000 * i, kanjiIFrame);
-        }
-
-        setTimeout(refreshHtmlSource, 300);
+        refreshHtmlSource();
         return container;
     }
 })();
