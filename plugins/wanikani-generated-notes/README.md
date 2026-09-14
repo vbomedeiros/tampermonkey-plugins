@@ -81,3 +81,97 @@ review testing remains separate from the automated review-gating tests.
 [PLAN.md](PLAN.md) retains the bulk preparation design. Its original subject-link
 proposal is superseded: vocabulary lookup uses exact `Front` matching. Bulk
 creation and AI generation remain future work.
+
+## Vocabulary preparation
+
+The Anki workflow has a `prepare_wanikani_vocab.py` CLI. By default it reports
+what would be reused, filled, or created without writing to Anki or calling
+OpenAI. Add `--run` to generate and save missing content. Keep Anki and AnkiConnect running. On macOS, the script automatically
+reads your token from Keychain. On first run it prompts for hidden input, saves
+the token to Keychain, and continues. Run it in Terminal for the first setup;
+macOS may ask you to allow Keychain access.
+
+The Keychain service is `japanese-card-workflow.wanikani`, account `api-token`.
+To replace a revoked token, delete that item in Keychain Access and rerun.
+`WANIKANI_API_TOKEN` remains an optional environment override; override values
+are not saved. No token is written to repository files or reports. If Keychain
+access or saving fails, the script stops with an error. An invalid token can be
+saved, but WaniKani will reject it; replace it using the steps above.
+If AnkiConnect requires a key, set `ANKICONNECT_API_KEY` as well.
+
+```sh
+python3 ~/Code/anki-plugins/plugins/japanese_card_workflow/prepare_wanikani_vocab.py \
+  --dry-run --levels 33,34 --output /tmp/wk-levels.json
+
+python3 ~/Code/anki-plugins/plugins/japanese_card_workflow/prepare_wanikani_vocab.py \
+  --dry-run --available-lessons --output /tmp/wk-lessons.json
+```
+
+When both selection flags are supplied, only available lessons on the specified
+levels are included (intersection). Each flag alone retains its usual behavior.
+Output filenames must be new. The script
+uses the adjacent workflow `config.json` for field/template/deck names; use
+`--config /path/to/config.json` if your active configuration differs. The `Beginning Japanese`
+note type and configured destination decks must already exist. This note type is
+fixed in the script; there is no `--model` flag.
+
+Reports include per-level counts, matching note IDs, conflicts, and the prospective
+number of generation requests. Only `GeneratedNotes` determines whether an
+explanation is missing; `Notes` is ignored and preserved. Active and
+suspended notes are both included. This report is a dry-run snapshot, not an
+execution manifest: later generation must revalidate notes before any writes.
+### Generate and save
+
+Restart Anki after updating the add-on, then close Browser/Add/Edit windows.
+The installed add-on must expose the new `japaneseWanikani*` bridge actions.
+Use `--run` instead of `--dry-run` to execute:
+
+```sh
+python3 ~/Code/anki-plugins/plugins/japanese_card_workflow/prepare_wanikani_vocab.py \
+  --run --levels 7 --available-lessons \
+  --concurrency 4
+```
+
+This makes paid OpenAI requests using `OPENAI_API_KEY` or the API key already
+configured in the Anki add-on. It reuses the existing generator and model.
+
+- Existing nonempty `GeneratedNotes` is reused. Empty fields are filled without
+  changing other fields, decks, or card scheduling. `Notes` is ignored.
+- New notes populate `Front`, `Back`, and `GeneratedNotes`; other fields remain
+  empty, including optional audio/image fields. Both configured templates must
+  generate cards. Both cards are routed to their normal subdecks and suspended.
+- Later manual unsuspension is preserved by subsequent completed runs.
+- Changed notes and duplicates are reported instead of overwritten.
+
+Requests run concurrently (default from workflow config, currently four), while
+Anki writes are serialized. Validated generation responses are saved locally before
+writes. Rerun the same command to retry failures without regenerating cached content.
+Use the same `--state` directory to reuse results; the default is
+`~/Library/Logs/japanese-card-workflow/wanikani`. JSON run reports record each word's
+outcome. Failed/conflicting items yield a nonzero exit status.
+
+Each new-note operation is undoable. If creation fails, it rolls back. A hard
+interruption can leave a new note tagged `japanese_workflow::wanikani_pending`;
+the next `--run` repairs those incomplete notes before starting generation.
+Until that recovery runs, a crash between creation and suspension can leave cards
+active. Normal completion removes the marker and ends automatic suspension control.
+Recovery uses the current configured deck destinations.
+
+Ctrl-C cancels queued jobs; already running requests may finish and cache their
+results before exit. Generated explanations are not independently human-reviewed.
+No automatic Anki sync is performed. See [PLAN.md](PLAN.md) for the design.
+
+Execution prints `Anki search: nid:...`. Paste it into Anki Browser to see both
+cards for each successfully created or filled note. The run report also stores
+`affected_note_ids` and `anki_search` after each result, including partial runs.
+Reused and failed items are excluded. `nid:0` means no notes were changed.
+
+### Historical preparation tags
+
+Execution adds `wanikani::level::07` and `wanikani::run::YYYY-MM-DD` to every
+successfully prepared note, including reused notes. The run date is the local
+date at execution start. `wanikani::source::created` is added only when creating
+a new note. Historical levels/dates and personal tags are preserved. Existing
+tags are compared case-insensitively; an already-tagged reused note is not rewritten.
+Dry runs add no tags. Newly tagged reused notes now count as affected notes in
+the printed search. Restart Anki after this update to load the tagging bridge.
