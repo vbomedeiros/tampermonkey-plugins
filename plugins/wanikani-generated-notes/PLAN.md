@@ -51,6 +51,7 @@ operation.
 New notes use the existing vocabulary model, field conventions, and templates:
 
 - Front: WaniKani spelling.
+- Kana: an exact copy of Front, for new notes only.
 - Back: generated dictionary definition through the existing generator.
 - GeneratedNotes: existing seven-section explanation format.
 - Card 1 → `Japanese Vocabulary::1. Recognition`.

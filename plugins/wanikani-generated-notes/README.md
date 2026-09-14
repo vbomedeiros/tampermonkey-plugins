@@ -137,7 +137,8 @@ configured in the Anki add-on. It reuses the existing generator and model.
 
 - Existing nonempty `GeneratedNotes` is reused. Empty fields are filled without
   changing other fields, decks, or card scheduling. `Notes` is ignored.
-- New notes populate `Front`, `Back`, and `GeneratedNotes`; other fields remain
+- New notes populate `Front`, `Kana` (copied from `Front`), `Back`, and
+  `GeneratedNotes`; other fields remain
   empty, including optional audio/image fields. Both configured templates must
   generate cards. Both cards are routed to their normal subdecks and suspended.
 - Later manual unsuspension is preserved by subsequent completed runs.
