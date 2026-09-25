@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Generated Notes
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      0.2.0
+// @version      0.2.1
 // @description  Show saved Anki GeneratedNotes in vocabulary pages, lessons, and answered reviews
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/*
@@ -261,11 +261,13 @@
             let slug = '';
             try { slug = decodeURIComponent(location.pathname.split('/')[2]); } catch { /* incomplete URL */ }
             if (positiveId(id) && characters && characters === slug) subject = { id: Number(id), characters: characters.normalize('NFC') };
-            anchor = document.querySelector('.subject-section--meaning');
+            anchor = document.querySelector('.subject-section--reading')
+                || document.querySelector('.subject-section--meaning');
         } else if (isReview()) {
             if (review.answered && review.frameReady) {
                 subject = review.subject;
-                anchor = document.querySelector('#subject-info .subject-section--meaning');
+                anchor = document.querySelector('#subject-info .subject-section--reading')
+                    || document.querySelector('#subject-info .subject-section--meaning');
             }
         } else {
             const id = location.pathname.match(/^\/subject-lessons\/[^/]+\/(\d+)\/?$/)?.[1];

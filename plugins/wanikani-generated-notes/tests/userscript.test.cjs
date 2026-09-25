@@ -14,7 +14,8 @@ const note = (id = 100, html = '<h3>Reading Breakdown</h3><p>Saved explanation</
 });
 const itemHTML = `<!doctype html><head><meta name="subject_id" content="7235"></head><body>
 <div class="page-header__prefix"><span class="subject-character__characters-text">後悔</span></div>
-<section class="subject-section--meaning"><h2>Meaning</h2></section></body>`;
+<section class="subject-section--meaning"><h2>Meaning</h2></section>
+<section class="subject-section--reading"><h2>Reading</h2></section></body>`;
 const linked = () => ({ [SETTINGS]: { profile: 'Test', apiKey: '' }, [KEY]: { links: {
     7235: { noteId: 100, characters: '後悔', html: '<p>Offline explanation</p>', state: 'ready', checkedAt: 1 },
 }, syncedAt: 1 } });
@@ -54,6 +55,7 @@ test('first visit automatically connects, searches Front, and displays notes wit
     const app = setup(); t.after(() => app.dom.window.close());
     await tick();
     assert.match(app.panel().textContent, /Saved explanation/);
+    assert.ok(app.panel().previousElementSibling.matches('.subject-section--reading'));
     assert.equal(app.storage[KEY].words['後悔'].state, 'ready');
     assert.ok(app.calls.some(c => c.action === 'findNotes' && c.params.query === '"Front:後悔"'));
     assert.ok(app.calls.every(c => ['getActiveProfile', 'findNotes', 'notesInfo'].includes(c.action)));
@@ -158,7 +160,7 @@ test('lesson Meaning tab mounts once, disappears on Reading, and handles kana vo
 });
 
 test('review requires an answer AND matching frame; hides immediately on next question, even for the same subject', async t => {
-    const app = setup({ path: '/subjects/review', saved: linked(), html: '<turbo-frame id="subject-info" src="/subjects/7235/subject_info"><section class="subject-section--meaning">Meaning</section></turbo-frame>' });
+    const app = setup({ path: '/subjects/review', saved: linked(), html: '<turbo-frame id="subject-info" src="/subjects/7235/subject_info"><section class="subject-section--meaning">Meaning</section><section class="subject-section--reading">Reading</section></turbo-frame>' });
     t.after(() => app.dom.window.close());
     const subject = { id: 7235, type: 'Vocabulary', characters: '後悔' };
     const frame = app.w.document.getElementById('subject-info');
@@ -174,6 +176,7 @@ test('review requires an answer AND matching frame; hides immediately on next qu
     frameLoad(); await tick(); assert.equal(app.panel(), null);
     app.emit('didAnswerQuestion', { subjectWithStats: { subject }, questionType: 'reading' });
     frameLoad(); await tick(); assert.ok(app.panel());
+    assert.ok(app.panel().previousElementSibling.matches('.subject-section--reading'));
     app.emit('willShowNextQuestion', { subject: { id: 1, type: 'Kanji', characters: '後' } });
     app.emit('didAnswerQuestion', { subjectWithStats: { subject: { id: 1, type: 'Kanji', characters: '後' } } });
     frameLoad(); await tick(); assert.equal(app.panel(), null);

@@ -30,10 +30,12 @@ Concurrent lookups for the same profile and word share their in-flight request.
 
 ## Supported pages
 
-- Vocabulary pages: **Generated Notes** appears after Meaning.
+- Vocabulary pages: **Generated Notes** appears after Reading (or Meaning when
+  there is no Reading section).
 - Vocabulary and kana-vocabulary lessons: at the bottom of the Meaning tab.
 - Reviews and lesson quizzes: in item information after answering and opening the
-  matching information panel. Notes disappear immediately on the next question.
+  matching information panel, after Reading (or Meaning when there is no Reading
+  section). Notes disappear immediately on the next question.
 
 The script handles Turbo navigation directly, without WKOF or Item Info Injector.
 
