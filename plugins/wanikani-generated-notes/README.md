@@ -1,8 +1,8 @@
 # WaniKani Generated Notes
 
 Automatically displays Anki’s `GeneratedNotes` for the current WaniKani word.
-Version 0.2.0 removes manual linking: every visit searches for an exact `Front`
-match and displays the explanation without a button click.
+Every visit searches for an exact `Front` match and displays the explanation
+without a button click. Version 1.0.0 supports the updated WaniKani frontend.
 
 ## Install or update
 
@@ -69,14 +69,34 @@ npm ci
 npm test
 ```
 
-The 11 DOM tests cover automatic first-use lookup, exact matching, replacement
+The 15 DOM tests cover automatic first-use lookup, exact matching, replacement
 note IDs, cache reuse and offline behavior, profile mismatch, missing/duplicate
 matches, partial responses, sanitization, navigation races, lesson tabs, and
-review answer gating. Test data is synthetic.
+review answer gating, asynchronous section replacement, rendered-item identity,
+and duplicate/stale-panel prevention. Test data is synthetic.
 
-Version 0.2.0 was also verified in Chrome with the existing 後悔 note: all seven
-sections appeared automatically without linking or button clicks. Live answered
-review testing remains separate from the automated review-gating tests.
+The 1.0.0 implementation was verified in Chrome using the
+[Tampermonkey MCP workflow](../../TAMPERMONKEY-MCP.md): 対応 displayed one panel
+and correctly reported no exact Anki match; navigating to 領域 loaded its saved
+GeneratedNotes, and returning to 対応 removed the previous word's content.
+Live answered reviews were not tested in this session; review coverage comes
+from automated tests and inspection of WaniKani's current frontend source.
+
+### Frontend compatibility
+
+The inspected vocabulary page uses `.subject-section[data-name="reading"]` and
+`.subject-section[data-name="meaning"]`, not the old `subject-section--reading`
+and `subject-section--meaning` classes. The suggested `#section-reading` and
+`#section-meaning` IDs were absent on that page.
+
+WaniKani's current `subject_info_controller` builds review information from local
+data and replaces its children asynchronously. Generated Notes observes these
+changes instead of requiring `turbo:frame-load`. It checks the rendered section's
+`data-note-item-id-value` against the answered subject before inserting notes.
+The current queue source still emits `willShowNextQuestion` with `detail.subject`
+and `didAnswerQuestion` with `detail.subjectWithStats.subject`. Notes remain gated
+on answering and disappear on the next question, including the same subject's
+other question. Recheck the live DOM and source when diagnosing future changes.
 
 ## Future work
 

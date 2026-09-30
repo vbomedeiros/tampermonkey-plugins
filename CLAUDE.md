@@ -9,9 +9,19 @@ plugins/
     └── README.md               ← what it does + install link
 ```
 
-## Always confirm before committing or pushing
+## Commit and push authorization
 
-Never run `git commit`, `git push` without explicitly asking the user first and receiving confirmation. Always show what will be committed and wait for approval before proceeding.
+An explicit user request to commit and/or push is sufficient authorization for
+those actions within the requested scope. Proceed without asking for a second
+confirmation. A request to commit alone does not authorize pushing. If the user
+has not requested an action, summarize the intended changes and ask before
+performing it. Include only the intended files; preserve unrelated changes.
+
+Use a descriptive commit subject explaining the change. The commit body must
+include a `Test plan:` section listing checks actually performed and their
+results, plus any relevant checks not run and why. Do not claim tests passed
+unless they were run. For documentation-only changes, record the documentation
+checks performed and explain that runtime tests were not needed.
 
 ## Metadata header template
 
@@ -64,12 +74,26 @@ mv plugins/my-plugin/plugin-name.user.js plugins/my-plugin/my-plugin.user.js
 # Update README.md with the correct install link and description
 ```
 
+## Live testing with Tampermonkey MCP
+
+Use [TAMPERMONKEY-MCP.md](TAMPERMONKEY-MCP.md) for pairing, reading and updating
+installed scripts, and verifying the result in the live browser. Keep repository
+`.user.js` files as the source of truth. Read the installed copy before patching,
+check for independent edits, and verify the saved source after patching. Do not
+modify script storage or unrelated scripts. A successful MCP write is not proof
+that the script works: reload the target page and inspect its actual behavior.
+
+Generated Notes handles navigation and asynchronous rendering directly; do not
+apply the Item Info Injector migration checklist above to it. Its current DOM
+and review-rendering assumptions are documented in its README.
+
 ## Daily workflow
 
 ```bash
-# Edit the .user.js directly, bump @version, then push
+# Edit the .user.js, bump @version, run checks, and test via MCP
+# Proceed if the user explicitly requested commit and push; otherwise ask
 git add plugins/my-plugin/my-plugin.user.js
-git commit -m "..."
+git commit -m "Describe the change" -m "Test plan: describe checks performed and results"
 git push
 # Tampermonkey picks up the update on next scheduled check,
 # or manually: dashboard → script menu → "Check for updates"

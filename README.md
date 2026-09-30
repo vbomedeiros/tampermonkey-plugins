@@ -27,3 +27,8 @@ mv plugins/my-plugin/plugin-name.user.js plugins/my-plugin/my-plugin.user.js
 ```
 
 See [CLAUDE.md](CLAUDE.md) for full conventions.
+
+## Development and live testing
+
+Use the [Tampermonkey MCP workflow](TAMPERMONKEY-MCP.md) to update an installed
+script from this repository and verify it in Chrome before publishing.
