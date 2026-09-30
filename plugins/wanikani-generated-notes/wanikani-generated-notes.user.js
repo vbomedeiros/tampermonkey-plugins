@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Generated Notes
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      0.2.1
+// @version      1.0.0
 // @description  Show saved Anki GeneratedNotes in vocabulary pages, lessons, and answered reviews
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/*
@@ -27,7 +27,7 @@
     let settings = GM_getValue(SETTINGS, { profile: '', apiKey: '' });
     let active = null;
     const pending = new Map();
-    let review = { subject: null, answered: false, frameReady: false };
+    let review = { subject: null, answered: false };
 
     const libraryKey = profile => LIBRARY + encodeURIComponent(profile);
     const library = profile => GM_getValue(libraryKey(profile), { links: {}, syncedAt: 0 });
@@ -250,6 +250,11 @@
         return /^\/subjects\/review(?:\/|$)/.test(location.pathname) || /^\/subject-lessons\/[^/]+\/quiz(?:\/|$)/.test(location.pathname);
     }
 
+    function infoAnchor(container) {
+        return container?.querySelector('.subject-section[data-name="reading"]')
+            || container?.querySelector('.subject-section[data-name="meaning"]');
+    }
+
     function reconcile() {
         if (!window.document) return;
         let subject = null;
@@ -261,13 +266,15 @@
             let slug = '';
             try { slug = decodeURIComponent(location.pathname.split('/')[2]); } catch { /* incomplete URL */ }
             if (positiveId(id) && characters && characters === slug) subject = { id: Number(id), characters: characters.normalize('NFC') };
-            anchor = document.querySelector('.subject-section--reading')
-                || document.querySelector('.subject-section--meaning');
+            anchor = infoAnchor(document);
         } else if (isReview()) {
-            if (review.answered && review.frameReady) {
-                subject = review.subject;
-                anchor = document.querySelector('#subject-info .subject-section--reading')
-                    || document.querySelector('#subject-info .subject-section--meaning');
+            if (review.answered && review.subject) {
+                const info = document.querySelector('[data-controller~="subject-info"]');
+                anchor = infoAnchor(info);
+                // The current renderer replaces sections asynchronously from local data.
+                // Check the rendered item's ID, not a frame URL or the previous question.
+                const id = anchor?.querySelector('[data-note-item-id-value]')?.dataset.noteItemIdValue;
+                if (Number(id) === review.subject.id) subject = review.subject;
             }
         } else {
             const id = location.pathname.match(/^\/subject-lessons\/[^/]+\/(\d+)\/?$/)?.[1];
@@ -293,23 +300,20 @@
     // WaniKani emits these events for both correct and incorrect submitted answers.
     // No quiz answer or scheduling operation is performed by this script.
     window.addEventListener('willShowNextQuestion', event => {
-        review = { subject: subjectData(event.detail?.subject), answered: false, frameReady: false };
+        review = { subject: subjectData(event.detail?.subject), answered: false };
         removePanel();
     });
     window.addEventListener('didAnswerQuestion', event => {
-        review = { subject: subjectData(event.detail?.subjectWithStats?.subject), answered: true, frameReady: false };
+        review = { subject: subjectData(event.detail?.subjectWithStats?.subject), answered: true };
         removePanel();
-    });
-    document.addEventListener('turbo:frame-load', event => {
-        if (isReview() && event.target.id === 'subject-info' && review.answered && review.subject) {
-            const src = event.target.getAttribute('src') || '';
-            // Reject a late info-frame response for a different subject.
-            review.frameReady = new RegExp(`(?:/|subject_id=)${review.subject.id}(?:[/?&#]|$)`).test(src);
-        }
         schedule();
     });
+    document.addEventListener('turbo:frame-load', schedule);
     document.addEventListener('turbo:before-cache', removePanel);
-    document.addEventListener('turbo:before-render', () => { removePanel(); review.frameReady = false; });
+    document.addEventListener('turbo:before-render', () => {
+        removePanel();
+        review = { subject: null, answered: false };
+    });
     document.addEventListener('turbo:load', schedule);
     window.addEventListener('hashchange', schedule);
     window.addEventListener('popstate', schedule);
@@ -318,7 +322,7 @@
         // Ignore our own panel updates to avoid render/observer loops.
         if (records.some(record => !record.target.closest?.(`#${PANEL}`))) schedule();
     });
-    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-subject-id'] });
+    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-subject-id', 'data-note-item-id-value'] });
     if (typeof GM_addValueChangeListener === 'function') {
         GM_addValueChangeListener(SETTINGS, (_key, _old, value, remote) => {
             if (!remote) return;

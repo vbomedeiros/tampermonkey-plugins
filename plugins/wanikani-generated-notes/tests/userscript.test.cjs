@@ -14,8 +14,8 @@ const note = (id = 100, html = '<h3>Reading Breakdown</h3><p>Saved explanation</
 });
 const itemHTML = `<!doctype html><head><meta name="subject_id" content="7235"></head><body>
 <div class="page-header__prefix"><span class="subject-character__characters-text">後悔</span></div>
-<section class="subject-section--meaning"><h2>Meaning</h2></section>
-<section class="subject-section--reading"><h2>Reading</h2></section></body>`;
+<section class="subject-section" data-name="meaning"><a class="wk-nav__anchor" id="meaning"></a><h2>Meaning</h2><section class="subject-section__content"></section></section>
+<section class="subject-section" data-name="reading"><a class="wk-nav__anchor" id="reading"></a><h2>Reading</h2><section class="subject-section__content"></section></section></body>`;
 const linked = () => ({ [SETTINGS]: { profile: 'Test', apiKey: '' }, [KEY]: { links: {
     7235: { noteId: 100, characters: '後悔', html: '<p>Offline explanation</p>', state: 'ready', checkedAt: 1 },
 }, syncedAt: 1 } });
@@ -55,7 +55,7 @@ test('first visit automatically connects, searches Front, and displays notes wit
     const app = setup(); t.after(() => app.dom.window.close());
     await tick();
     assert.match(app.panel().textContent, /Saved explanation/);
-    assert.ok(app.panel().previousElementSibling.matches('.subject-section--reading'));
+    assert.ok(app.panel().previousElementSibling.matches('.subject-section[data-name="reading"]'));
     assert.equal(app.storage[KEY].words['後悔'].state, 'ready');
     assert.ok(app.calls.some(c => c.action === 'findNotes' && c.params.query === '"Front:後悔"'));
     assert.ok(app.calls.every(c => ['getActiveProfile', 'findNotes', 'notesInfo'].includes(c.action)));
@@ -159,25 +159,102 @@ test('lesson Meaning tab mounts once, disappears on Reading, and handles kana vo
     assert.ok(app.panel());
 });
 
-test('review requires an answer AND matching frame; hides immediately on next question, even for the same subject', async t => {
-    const app = setup({ path: '/subjects/review', saved: linked(), html: '<turbo-frame id="subject-info" src="/subjects/7235/subject_info"><section class="subject-section--meaning">Meaning</section><section class="subject-section--reading">Reading</section></turbo-frame>' });
+// Current subject_info_controller populates noteItemIdValue before replacing sections.
+const reviewHTML = id => `<section class="subject-section" data-name="meaning"><h2>Meaning</h2><div data-controller="note" data-note-item-id-value="${id}"></div></section>
+<section class="subject-section" data-name="reading"><h2>Reading</h2><div data-controller="note" data-note-item-id-value="${id}"></div></section>`;
+const vocabulary = { id: 7235, type: 'Vocabulary', characters: '後悔' };
+const answer = (app, subject = vocabulary) => app.emit('didAnswerQuestion', { subjectWithStats: { subject }, questionType: 'meaning' });
+
+for (const renderBeforeAnswer of [false, true]) {
+    test(`review mounts with matching rendered content ${renderBeforeAnswer ? 'before' : 'after'} answer, without a Turbo frame`, async t => {
+        const app = setup({ path: '/subjects/review', saved: linked(), html: '<div data-controller="subject-info"></div>' });
+        t.after(() => app.dom.window.close());
+        const info = app.w.document.querySelector('[data-controller="subject-info"]');
+        app.emit('willShowNextQuestion', { subject: vocabulary });
+        if (renderBeforeAnswer) {
+            info.innerHTML = reviewHTML(7235);
+            await tick(); assert.equal(app.panel(), null);
+        }
+        answer(app);
+        if (!renderBeforeAnswer) {
+            await tick(); assert.equal(app.panel(), null);
+            info.innerHTML = reviewHTML(7235);
+        }
+        await tick();
+        assert.match(app.panel().textContent, /Saved explanation/);
+        assert.ok(app.panel().previousElementSibling.matches('.subject-section[data-name="reading"]'));
+        // Opening, closing, and re-rendering info must never duplicate the panel.
+        info.hidden = true;
+        info.hidden = false;
+        info.innerHTML = reviewHTML(7235);
+        await tick();
+        assert.equal(info.querySelectorAll('#wk-generated-notes').length, 1);
+        app.emit('willShowNextQuestion', { subject: vocabulary, questionType: 'reading' });
+        assert.equal(app.panel(), null);
+        info.innerHTML = reviewHTML(7235);
+        await tick(); assert.equal(app.panel(), null);
+        answer(app); await tick(); assert.ok(app.panel());
+    });
+}
+
+test('review rejects stale and related-item content, and late Anki results from the previous item', async t => {
+    let resolveNotes;
+    const app = setup({ path: '/subjects/review', saved: linked(), html: '<div data-controller="subject-info"></div>', handler: body => {
+        if (body.action === 'getActiveProfile') return 'Test';
+        if (body.action === 'findNotes') return body.params.query.includes('後悔') ? [100] : [];
+        return body.params.notes.length ? new Promise(resolve => { resolveNotes = resolve; }) : [];
+    } });
     t.after(() => app.dom.window.close());
-    const subject = { id: 7235, type: 'Vocabulary', characters: '後悔' };
-    const frame = app.w.document.getElementById('subject-info');
-    const frameLoad = () => frame.dispatchEvent(new app.w.Event('turbo:frame-load', { bubbles: true }));
-    app.emit('willShowNextQuestion', { subject, questionType: 'meaning' });
-    frameLoad(); await tick(); assert.equal(app.panel(), null);
-    app.emit('didAnswerQuestion', { subjectWithStats: { subject }, questionType: 'meaning' });
-    await tick(); assert.equal(app.panel(), null);
-    frame.setAttribute('src', '/subjects/999/subject_info'); frameLoad(); await tick(); assert.equal(app.panel(), null);
-    frame.setAttribute('src', '/subjects/7235/subject_info'); frameLoad(); await tick(); assert.ok(app.panel());
-    app.emit('willShowNextQuestion', { subject, questionType: 'reading' });
+    const info = app.w.document.querySelector('[data-controller="subject-info"]');
+    answer(app);
+    info.innerHTML = reviewHTML(7235);
+    await tick(); assert.ok(app.panel());
+    const next = { id: 1000, subject_category: 'Vocabulary', characters: '学校' };
+    app.emit('willShowNextQuestion', { subject: next });
     assert.equal(app.panel(), null);
-    frameLoad(); await tick(); assert.equal(app.panel(), null);
-    app.emit('didAnswerQuestion', { subjectWithStats: { subject }, questionType: 'reading' });
-    frameLoad(); await tick(); assert.ok(app.panel());
-    assert.ok(app.panel().previousElementSibling.matches('.subject-section--reading'));
-    app.emit('willShowNextQuestion', { subject: { id: 1, type: 'Kanji', characters: '後' } });
-    app.emit('didAnswerQuestion', { subjectWithStats: { subject: { id: 1, type: 'Kanji', characters: '後' } } });
-    frameLoad(); await tick(); assert.equal(app.panel(), null);
+    answer(app, next);
+    await tick(); assert.equal(app.panel(), null); // Previous sections still present.
+    info.innerHTML = reviewHTML(1000);
+    await tick(); assert.ok(app.panel());
+    resolveNotes([note()]); await tick();
+    assert.doesNotMatch(app.panel().textContent, /Saved explanation|Offline explanation/);
+    info.innerHTML = reviewHTML(7235); // Late renderer or related-item drilldown.
+    await tick(); assert.equal(app.panel(), null);
+    info.innerHTML = reviewHTML(1000);
+    await tick(); assert.ok(app.panel());
+    app.w.document.dispatchEvent(new app.w.Event('turbo:before-render'));
+    await tick(); assert.equal(app.panel(), null);
+});
+
+test('review supports meaning-only kana vocabulary and never mounts for kanji', async t => {
+    const app = setup({ path: '/subjects/review', html: '<div data-controller="subject-info"></div>' });
+    t.after(() => app.dom.window.close());
+    const info = app.w.document.querySelector('[data-controller="subject-info"]');
+    info.innerHTML = reviewHTML(7235);
+    info.querySelector('[data-name="reading"]').remove();
+    answer(app, { ...vocabulary, type: 'KanaVocabulary' });
+    await tick(); assert.ok(app.panel());
+    assert.ok(app.panel().previousElementSibling.matches('[data-name="meaning"]'));
+    const kanji = { id: 1, type: 'Kanji', characters: '後' };
+    app.emit('willShowNextQuestion', { subject: kanji });
+    answer(app, kanji);
+    info.innerHTML = reviewHTML(1);
+    await tick(); assert.equal(app.panel(), null);
+});
+
+test('direct page rejects old headers during navigation and restores cached markup only once', async t => {
+    const app = setup(); t.after(() => app.dom.window.close());
+    await tick();
+    app.w.history.pushState({}, '', '/vocabulary/学校');
+    app.w.document.dispatchEvent(new app.w.Event('turbo:load'));
+    await tick(); assert.equal(app.panel(), null);
+    app.w.history.back();
+    await tick();
+    assert.ok(app.panel());
+    const cached = app.panel().cloneNode(true);
+    app.w.document.dispatchEvent(new app.w.Event('turbo:before-cache'));
+    app.w.document.querySelector('[data-name="reading"]').after(cached);
+    app.w.document.dispatchEvent(new app.w.Event('turbo:load'));
+    await tick();
+    assert.equal(app.w.document.querySelectorAll('#wk-generated-notes').length, 1);
 });
