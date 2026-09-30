@@ -9,20 +9,6 @@ plugins/
     └── README.md               ← what it does + install link
 ```
 
-## Commit and push authorization
-
-An explicit user request to commit and/or push is sufficient authorization for
-those actions within the requested scope. Proceed without asking for a second
-confirmation. A request to commit alone does not authorize pushing. If the user
-has not requested an action, summarize the intended changes and ask before
-performing it. Include only the intended files; preserve unrelated changes.
-
-Use a descriptive commit subject explaining the change. The commit body must
-include a `Test plan:` section listing checks actually performed and their
-results, plus any relevant checks not run and why. Do not claim tests passed
-unless they were run. For documentation-only changes, record the documentation
-checks performed and explain that runtime tests were not needed.
-
 ## Metadata header template
 
 Every `.user.js` must begin with this block (filled in per plugin):
@@ -91,9 +77,8 @@ and review-rendering assumptions are documented in its README.
 
 ```bash
 # Edit the .user.js, bump @version, run checks, and test via MCP
-# Proceed if the user explicitly requested commit and push; otherwise ask
 git add plugins/my-plugin/my-plugin.user.js
-git commit -m "Describe the change" -m "Test plan: describe checks performed and results"
+git commit  # write the message using your global instructions
 git push
 # Tampermonkey picks up the update on next scheduled check,
 # or manually: dashboard → script menu → "Check for updates"

@@ -46,10 +46,8 @@ extension pages; ask the user to complete the extension UI step when needed.
    actual content, placement, controls, navigation, duplicate insertion, and stale
    content. Test relevant asynchronous flows; distinguish live verification from
    synthetic DOM tests. Record any flows that were not tested.
-7. Remove temporary instrumentation from both copies. Follow `CLAUDE.md` for
-   commit and push authorization: an explicit user request is sufficient; do not
-   ask again. Include a descriptive commit message and a `Test plan:` section
-   recording checks performed, results, and relevant untested flows.
+7. Remove temporary instrumentation from both copies. Follow your global
+   instructions for commit/push authorization and commit messages.
 
 Installing through MCP does not commit or publish a GitHub change. Keep the local
 and installed copies aligned so a later auto-update does not replace unrecorded
