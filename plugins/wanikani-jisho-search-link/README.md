@@ -15,4 +15,6 @@ Click the link below while Tampermonkey is installed in your browser:
 
 ## Notes
 
-- Works after Turbo navigation — the script listens for `turbo:load` and checks the URL on each navigation, so searching repeatedly without a hard refresh works correctly
+- Initializes immediately, even if the first `turbo:load` event has already fired.
+- Handles Turbo navigation, browser history, and delayed or replaced search results.
+- Updates the existing link for the current query without creating duplicates, and removes it outside search results.

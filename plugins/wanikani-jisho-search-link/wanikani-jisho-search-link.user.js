@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Wanikani: Jisho Search Link
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.0.2
+// @version      1.0.3
 // @description  Adds a link to Jisho.org search results below the search results on Wanikani search pages.
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/*
@@ -16,37 +16,47 @@
     'use strict';
 
     function inject() {
-        if (!location.pathname.startsWith('/search')) return false;
-        if (document.getElementById('jisho-search-link')) return true;
-
+        const existing = document.getElementById('jisho-search-link');
         const searchResults = document.querySelector('.search-results');
-        if (!searchResults) return false;
+        const query = new URLSearchParams(location.search).get('query');
+        if (location.pathname !== '/search' || !searchResults || !query) {
+            existing?.remove();
+            return;
+        }
 
-        const query = new URLSearchParams(window.location.search).get('query');
-        if (!query) return false;
-
-        const jishoLink = document.createElement('a');
-        jishoLink.href = `https://jisho.org/search/${encodeURIComponent(query)}`;
-        jishoLink.target = '_blank';
-        jishoLink.textContent = `Search "${query}" on Jisho.org`;
-
-        const jishoDiv = document.createElement('div');
-        jishoDiv.id = 'jisho-search-link';
-        jishoDiv.style.marginTop = '20px';
-        jishoDiv.appendChild(jishoLink);
-
-        searchResults.parentNode.insertBefore(jishoDiv, searchResults.nextSibling);
-        return true;
+        const jishoDiv = existing || document.createElement('div');
+        if (!existing) {
+            jishoDiv.id = 'jisho-search-link';
+            jishoDiv.style.marginTop = '20px';
+            const link = document.createElement('a');
+            link.target = '_blank';
+            jishoDiv.appendChild(link);
+        }
+        const jishoLink = jishoDiv.querySelector('a');
+        const href = `https://jisho.org/search/${encodeURIComponent(query)}`;
+        const label = `Search "${query}" on Jisho.org`;
+        if (jishoLink.getAttribute('href') !== href) jishoLink.href = href;
+        if (jishoLink.textContent !== label) jishoLink.textContent = label;
+        // Results may be replaced independently of the rest of the page.
+        if (searchResults.nextElementSibling !== jishoDiv) searchResults.after(jishoDiv);
     }
 
-    document.addEventListener('turbo:load', () => {
-        if (inject()) return;
-
-        // .search-results not yet in DOM (loaded async by Turbo Frame) — watch for it
-        const observer = new MutationObserver(() => {
-            if (inject()) observer.disconnect();
+    let scheduled = false;
+    function schedule() {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(() => {
+            scheduled = false;
+            inject();
         });
-        observer.observe(document.body, { childList: true, subtree: true });
-        setTimeout(() => observer.disconnect(), 5000);
+    }
+
+    document.addEventListener('turbo:load', schedule);
+    document.addEventListener('turbo:render', schedule);
+    window.addEventListener('popstate', schedule);
+    new MutationObserver(schedule).observe(document.documentElement, {
+        childList: true, subtree: true,
     });
+    // Tampermonkey may start after the initial turbo:load event has fired.
+    schedule();
 })();
