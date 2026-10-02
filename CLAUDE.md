@@ -49,7 +49,7 @@ hard-refresh). Full details and a migration template are in
 
 Exception: plugins that only run on item pages (`/vocabulary/*`, `/kanji/*`, etc.) and
 are never navigated to via Turbo from a non-matching page can keep a narrower `@match`.
-See `wanikani-to-anki` for that pattern.
+WaniKani to Anki now uses the broader match to support dashboard navigation.
 
 ## Creating a new plugin
 
@@ -69,9 +69,9 @@ check for independent edits, and verify the saved source after patching. Do not
 modify script storage or unrelated scripts. A successful MCP write is not proof
 that the script works: reload the target page and inspect its actual behavior.
 
-Generated Notes handles navigation and asynchronous rendering directly; do not
-apply the Item Info Injector migration checklist above to it. Its current DOM
-and review-rendering assumptions are documented in its README.
+Generated Notes and WaniKani to Anki handle navigation and asynchronous rendering
+directly; do not apply the Item Info Injector migration checklist above to them.
+Their current DOM assumptions are documented in their respective READMEs.
 
 ## Daily workflow
 

@@ -1,12 +1,11 @@
 // ==UserScript==
 // @name         WaniKani to Anki
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      5.0.1
+// @version      5.0.2
 // @description  Build easy-to-copy HTML source for Anki HTML editor
 // @author       Victor Medeiros
-// @match        https://www.wanikani.com/vocabulary/*
+// @match        https://www.wanikani.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=wanikani.com
-// @require      https://greasyfork.org/scripts/430565-wanikani-item-info-injector/code/WaniKani%20Item%20Info%20Injector.user.js?version=1326536
 // @grant        none
 // @license      MIT
 // @updateURL    https://raw.githubusercontent.com/vbomedeiros/tampermonkey-plugins/main/plugins/wanikani-to-anki/wanikani-to-anki.user.js
@@ -34,22 +33,61 @@
             console.error('WaniKani to Anki: failed to load WKOF subject data', err);
         });
 
-    // Register with the injector so the section is re-built on every Turbo
-    // navigation, not just on the initial hard load.
+    // Item Info Injector's old section selectors no longer match WaniKani.
+    // Reconcile after Turbo navigation and delayed rendering, including cache restores.
     function register() {
-        if (!window.wkItemInfo) { setTimeout(register, 50); return; }
-        ['vocabulary', 'kanaVocabulary'].forEach(type => {
-            window.wkItemInfo
-                .on('itemPage')
-                .forType(type)
-                .under('meaning')
-                .append('For Anki HTML import', buildSection);
+        let scheduled = false;
+        function schedule() {
+            if (scheduled) return;
+            scheduled = true;
+            requestAnimationFrame(() => {
+                scheduled = false;
+                render();
+            });
+        }
+        document.addEventListener('turbo:load', schedule);
+        document.addEventListener('turbo:render', schedule);
+        document.addEventListener('turbo:before-cache', () => {
+            document.getElementById('wk-to-anki')?.remove();
         });
+        new MutationObserver(schedule).observe(document.documentElement, {
+            childList: true, subtree: true,
+        });
+        schedule();
     }
 
-    function buildSection(itemObject) {
-        console.log("WaniKani to Anki: notified!");
-        return loadWanikaniToAnkiSection(itemObject);
+    function render() {
+        const existing = document.getElementById('wk-to-anki');
+        const id = Number(document.querySelector('meta[name="subject_id"]')?.content);
+        const subject = subjectsById.get(id);
+        const meaning = document.querySelector('.subject-section[data-name="meaning"]');
+        const reading = document.querySelector('.subject-section[data-name="reading"]');
+        const isVocabulary = /^\/vocabulary\//.test(location.pathname) &&
+            ['vocabulary', 'kana_vocabulary'].includes(subject?.object);
+        if (!isVocabulary || !meaning ||
+            !meaning.querySelector('[data-name="mnemonic"]') ||
+            (subject.object === 'vocabulary' && !reading?.querySelector('[data-name="mnemonic"]'))) {
+            existing?.remove();
+            return;
+        }
+        // A Turbo transition can briefly expose the previous page's metadata.
+        if (decodeURIComponent(location.pathname.split('/')[2]) !== subject.data.characters) {
+            existing?.remove();
+            return;
+        }
+        if (existing?.dataset.subjectId === String(id)) return;
+        existing?.remove();
+        const section = document.createElement('section');
+        section.id = 'wk-to-anki';
+        section.dataset.subjectId = String(id);
+        section.className = 'subject-section';
+        const title = document.createElement('h2');
+        title.className = 'subject-section__title';
+        title.textContent = 'For Anki HTML import';
+        const content = loadWanikaniToAnkiSection({ id });
+        content.className = 'subject-section__content';
+        section.append(title, content);
+        meaning.after(section);
     }
 
     function inlineMarkStyles(root) {
@@ -204,8 +242,7 @@
     }
 
     function loadWanikaniToAnkiSection(itemObject) {
-        // The injector wraps the returned element in a titled <section>.
-        // Return a plain container with just the controls and content.
+        // The caller wraps the controls and content in a titled section.
         const container = document.createElement("div");
 
         const copyControls = document.createElement("section");
@@ -371,18 +408,17 @@
         const readingNode = document.querySelector(".reading-with-audio__reading");
         const vocabularyReading = readingNode ? "、" + readingNode.textContent : "";
 
-        const meaningSections = document.querySelectorAll(".subject-section__meanings");
+        const meaningSections = document.querySelectorAll('.subject-section[data-name="meaning"] > .subject-section__content > [data-name]');
 
         let vocabularyType = "";
         let vocabularyAlternatives = "";
 
         for (let i = 0; i < meaningSections.length; i++) {
-            const titleNode = meaningSections[i].querySelector(".subject-section__meanings-title");
-            const itemsNode = meaningSections[i].querySelector(".subject-section__meanings-items");
-            if (!titleNode || !itemsNode) continue;
+            const itemsNode = meaningSections[i].querySelector("[data-content]");
+            if (!itemsNode) continue;
 
-            const meaningTitle = titleNode.textContent;
-            if (meaningTitle === "Word Type") {
+            const meaningTitle = meaningSections[i].dataset.name;
+            if (meaningTitle === "partsOfSpeech") {
                 vocabularyType = "、" + itemsNode.textContent;
                 vocabularyType = vocabularyType.replace(/, /g, "、");
                 vocabularyType = vocabularyType.replace(/godan verb/g, "五段");
@@ -390,7 +426,7 @@
                 vocabularyType = vocabularyType.replace(/、intransitive verb/g, "、自動詞");
                 vocabularyType = vocabularyType.replace(/、transitive verb/g, "、他動詞");
             }
-            if (meaningTitle === "Alternatives" || meaningTitle === "Alternative") {
+            if (meaningTitle === "alternativeMeanings") {
                 vocabularyAlternatives = ", " + itemsNode.textContent;
             }
         }
@@ -399,14 +435,14 @@
         const vocabularyLevel = levelNode ? "、" + levelNode.textContent.trim() : "";
 
         cloneElements(
-            document.querySelectorAll(".subject-section--meaning .subject-section__subsection p.subject-section__text"),
+            document.querySelectorAll('.subject-section[data-name="meaning"] [data-name="mnemonic"] p.subject-section__text'),
             vocabulary + "（" + vocabularyMeaning + vocabularyAlternatives + vocabularyReading + vocabularyType + vocabularyLevel + "）："
         );
 
         appendBreak();
 
         cloneElements(
-            document.querySelectorAll(".subject-section--reading .subject-section__subsection p.subject-section__text")
+            document.querySelectorAll('.subject-section[data-name="reading"] [data-name="mnemonic"] p.subject-section__text')
         );
 
         const vocabularySubject = subjectsById.get(itemObject.id);
