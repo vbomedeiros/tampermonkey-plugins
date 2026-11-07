@@ -258,3 +258,17 @@ test('direct page rejects old headers during navigation and restores cached mark
     await tick();
     assert.equal(app.w.document.querySelectorAll('#wk-generated-notes').length, 1);
 });
+
+for (const review of [false, true]) {
+    test(`current collapsible sections display notes on ${review ? 'reviews' : 'vocabulary pages'}`, async t => {
+        const html = (review ? `<div data-controller="subject-info">${reviewHTML(7235)}</div>` : itemHTML)
+            .replaceAll('<section class="subject-section"', '<wk-collapsible-section class="subject-section-new"')
+            .replaceAll('</section>', '</wk-collapsible-section>');
+        const app = setup({ html, path: review ? '/subjects/review' : '/vocabulary/後悔' });
+        t.after(() => app.dom.window.close());
+        if (review) app.emit('didAnswerQuestion', { subjectWithStats: { subject: { id: 7235, type: 'Vocabulary', characters: '後悔' } } });
+        await tick();
+        assert.match(app.panel()?.textContent || '', /Saved explanation/);
+        assert.ok(app.panel().previousElementSibling.matches('wk-collapsible-section[data-name="reading"]'));
+    });
+}
