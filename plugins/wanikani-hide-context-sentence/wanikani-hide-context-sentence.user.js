@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Hide Context Sentence
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      2.1.0
+// @version      2.1.1
 // @description  Hide context sentences until hovered.
 // @author       Robin Findley
 // @match        https://www.wanikani.com/*
@@ -48,25 +48,13 @@
         `);
     }
 
-    function add_context_sentence_classes(root) {
-        Array.from(root.querySelectorAll('.subject-section__subtitle'))
-            .find(node => node.textContent.includes('Context Sentences'))
-            ?.closest('section')
-            ?.querySelectorAll('.subject-section__text')
-            ?.forEach(elem => elem.classList.add('context-sentence-group'));
+    function setup() {
+        if (url_matches()) inject_css();
     }
 
-    // Add classes to the incoming body before Turbo swaps it in, preventing a flash.
-    // No URL check here — harmless if the new page has no context sentences.
-    document.documentElement.addEventListener('turbo:before-render', e => {
-        add_context_sentence_classes(e.detail.newBody);
-    });
-
-    // Fires on initial hard load and after every Turbo navigation.
-    document.documentElement.addEventListener('turbo:load', () => {
-        if (!url_matches()) return;
-        inject_css();
-        add_context_sentence_classes(document);
-    });
+    // Current WaniKani supplies .context-sentences/.wk-text itself. CSS also
+    // covers content added later by lesson/review rendering without DOM edits.
+    document.addEventListener('turbo:load', setup);
+    setup(); // The initial Turbo event may precede Tampermonkey startup.
 
 }());
