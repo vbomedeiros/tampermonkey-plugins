@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Progress Compass
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.0.4
+// @version      1.0.5
 // @description  Self-regulating dashboard: adaptive kanji quota keeps the vocab pipeline flowing, with level-up progress always front and center.
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/*
@@ -58,8 +58,8 @@
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    function todayStr() {
-        const p = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    function todayStr(date = new Date()) {
+        const p = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
         return p.find(x => x.type === 'year').value + '-' +
                p.find(x => x.type === 'month').value + '-' +
                p.find(x => x.type === 'day').value;
@@ -108,8 +108,8 @@
         const apprentice = items.filter(i => i.assignments && i.assignments.srs_stage >= 1 && i.assignments.srs_stage <= 4).length;
 
         // Today's lesson activity
-        const kanjiToday = levelKanji.filter(i => i.assignments.started_at?.startsWith(today)).length;
-        const vocabToday = allVocab.filter(i => i.assignments.started_at?.startsWith(today)).length;
+        const kanjiToday = levelKanji.filter(i => i.assignments.started_at && todayStr(new Date(i.assignments.started_at)) === today).length;
+        const vocabToday = allVocab.filter(i => i.assignments.started_at && todayStr(new Date(i.assignments.started_at)) === today).length;
 
         // Lesson queues (unlocked, not yet started)
         const vocabQ   = allVocab.filter(i => i.assignments.srs_stage === 0);

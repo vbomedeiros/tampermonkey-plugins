@@ -74,3 +74,21 @@ test('late WKOF data and delayed page sections render the current item only', as
   w.history.pushState({}, '', '/vocabulary/かな'); d.dispatchEvent(new w.Event('turbo:load')); await settle();
   assert.equal(d.querySelector('#wk-to-anki'), null);
 });
+
+test('web component sections export both mnemonics and word metadata', async t => {
+  const { dom, d, settle } = await setup(); t.after(() => dom.window.close());
+  d.querySelector('#wk-to-anki').remove();
+  for (const old of [...d.querySelectorAll('.subject-section[data-name]')]) {
+    const section = d.createElement('wk-collapsible-section');
+    section.dataset.name = old.dataset.name;
+    const content = old.querySelector(':scope > .subject-section__content');
+    section.innerHTML = content ? content.innerHTML : old.innerHTML;
+    old.replaceWith(section);
+  }
+  await settle();
+  const html = d.querySelector('#ankiHtmlSource').value;
+  assert.match(html, /Meaning.*mnemonic/);
+  assert.match(html, /Reading mnemonic/);
+  assert.match(html, /Response、たいおう、noun、他動詞/);
+  assert.doesNotMatch(html, /Private note/);
+});

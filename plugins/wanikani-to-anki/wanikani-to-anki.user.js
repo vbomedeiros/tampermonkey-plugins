@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani to Anki
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      5.0.2
+// @version      5.0.3
 // @description  Build easy-to-copy HTML source for Anki HTML editor
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/*
@@ -60,8 +60,8 @@
         const existing = document.getElementById('wk-to-anki');
         const id = Number(document.querySelector('meta[name="subject_id"]')?.content);
         const subject = subjectsById.get(id);
-        const meaning = document.querySelector('.subject-section[data-name="meaning"]');
-        const reading = document.querySelector('.subject-section[data-name="reading"]');
+        const meaning = document.querySelector(':is(.subject-section, wk-collapsible-section)[data-name="meaning"]');
+        const reading = document.querySelector(':is(.subject-section, wk-collapsible-section)[data-name="reading"]');
         const isVocabulary = /^\/vocabulary\//.test(location.pathname) &&
             ['vocabulary', 'kana_vocabulary'].includes(subject?.object);
         if (!isVocabulary || !meaning ||
@@ -408,7 +408,7 @@
         const readingNode = document.querySelector(".reading-with-audio__reading");
         const vocabularyReading = readingNode ? "、" + readingNode.textContent : "";
 
-        const meaningSections = document.querySelectorAll('.subject-section[data-name="meaning"] > .subject-section__content > [data-name]');
+        const meaningSections = document.querySelectorAll(':is(.subject-section, wk-collapsible-section)[data-name="meaning"] [data-name]');
 
         let vocabularyType = "";
         let vocabularyAlternatives = "";
@@ -435,14 +435,14 @@
         const vocabularyLevel = levelNode ? "、" + levelNode.textContent.trim() : "";
 
         cloneElements(
-            document.querySelectorAll('.subject-section[data-name="meaning"] [data-name="mnemonic"] p.subject-section__text'),
+            document.querySelectorAll(':is(.subject-section, wk-collapsible-section)[data-name="meaning"] [data-name="mnemonic"] p.subject-section__text'),
             vocabulary + "（" + vocabularyMeaning + vocabularyAlternatives + vocabularyReading + vocabularyType + vocabularyLevel + "）："
         );
 
         appendBreak();
 
         cloneElements(
-            document.querySelectorAll('.subject-section[data-name="reading"] [data-name="mnemonic"] p.subject-section__text')
+            document.querySelectorAll(':is(.subject-section, wk-collapsible-section)[data-name="reading"] [data-name="mnemonic"] p.subject-section__text')
         );
 
         const vocabularySubject = subjectsById.get(itemObject.id);

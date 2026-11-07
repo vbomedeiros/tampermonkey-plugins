@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WaniKani Kanji Vocabulary in Lessons
 // @namespace    https://github.com/vbomedeiros/tampermonkey-plugins
-// @version      1.1.0
+// @version      1.1.1
 // @description  Show vocabulary for kanji during WaniKani lessons on the "Examples" tab.
 // @author       Victor Medeiros
 // @match        https://www.wanikani.com/*
@@ -48,6 +48,7 @@
 
         const vocabList = kanjiData.data.amalgamation_subject_ids
             .map(example_id => items.find(item => item.id === example_id))
+            .filter(item => item?.data)
             .sort((a, b) => a.data.level - b.data.level);
 
         const section = document.createElement('section');
